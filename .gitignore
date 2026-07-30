@@ -4,3 +4,7 @@
 .RData
 .Ruserdata
 .DS_Store
+
+# Local artifacts of the draft-day tool (draft/)
+draft/cache/
+draft/*.sqlite
