@@ -10,7 +10,7 @@ of Sleeper, and combines the two into one ranked table:
 
 Or from a shell::
 
-    python -m ffanalytics --league 1234567890 --out projections.csv
+    python -m ffanalytics --league 1234567890 --db draft.sqlite
 
 The pieces are usable on their own -- :func:`scrape_data` to pull the sites,
 :func:`projections_table` to aggregate them under any

@@ -27,13 +27,13 @@ People's Republic of Collusion (2026) -- 12 teams
   starting slots: QB, RB, RB, WR, WR, TE, FLEX, SUPER_FLEX, K
   bench: 6
   scoring: 1 PPR, TE premium (2.5), 3 pt pass TD, 0.05/pass yd, superflex
-  replacement level: K12, QB24, RB24, TE23, WR25
+  replacement level: K12, QB24, RB24, TE20, WR28
   sources used: CBS, ESPN, FFToday, RTSports, WalterFootball
 
  rank pos  pos_rank  tier              player team  points  points_vor  floor  ceiling  dropoff   adp
-    1  TE         1     1        Trey McBride  ARI   407.7       184.4  325.8    451.5      3.0  29.7
-    2  TE         2     1        Brock Bowers   LV   404.7       181.4  380.9    421.0     66.3  27.2
-    3  RB         1     1        Jahmyr Gibbs  DET   381.3       175.5  369.7    399.3      2.9   2.5
+    1  TE         1     1        Trey McBride  ARI   455.6       193.6  432.1    479.8     30.9  29.7
+    2  RB         1     1      Bijan Robinson  ATL   429.9       187.1  404.3    454.4      2.4   2.5
+    3  RB         2     1        Jahmyr Gibbs  DET   427.5       184.7  417.7    439.4     48.7   2.5
     ...
 ```
 
