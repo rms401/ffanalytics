@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from ffanalytics.impute import (
+    impute_first_downs,
     _reconcile_kicking,
     from_mean,
     from_rate,
@@ -106,3 +107,61 @@ def test_nested_thresholds_roll_up_into_the_wider_one():
     out = impute_bonus_columns({"QB": frame}, rules)["QB"]
     assert out["pass_300_yds"].iloc[0] >= out["pass_350_yds"].iloc[0]
     assert out["pass_350_yds"].iloc[0] >= out["pass_400_yds"].iloc[0]
+
+
+def test_first_downs_are_estimated_from_yardage_at_the_position_rate():
+    """Receiving first downs convert at different rates by position."""
+    rules = ScoringRules(stats={"rec_yds": 0.1}, by_pos={
+        "RB": {"rec_fd": 0.5}, "WR": {"rec_fd": 0.5}, "TE": {"rec_fd": 0.5},
+    }, name="test")
+    frames = {
+        pos: pd.DataFrame({"id": ["A"], "pos": [pos], "data_src": ["CBS"],
+                           "rec_yds": [1000.0]})
+        for pos in ("RB", "WR", "TE")
+    }
+    out = impute_first_downs(frames, rules)
+
+    assert out["RB"]["rec_fd"].iloc[0] == pytest.approx(45.0)   # 0.0450 * 1000
+    assert out["WR"]["rec_fd"].iloc[0] == pytest.approx(48.3)   # 0.0483 * 1000
+    assert out["TE"]["rec_fd"].iloc[0] == pytest.approx(50.3)   # 0.0503 * 1000
+
+
+def test_rushing_first_downs_use_one_rate_for_every_position():
+    rules = ScoringRules(stats={"rush_yds": 0.1}, by_pos={
+        "QB": {"rush_fd": 0.5}, "RB": {"rush_fd": 0.5},
+    }, name="test")
+    frames = {
+        pos: pd.DataFrame({"id": ["A"], "pos": [pos], "data_src": ["CBS"],
+                           "rush_yds": [1000.0]})
+        for pos in ("QB", "RB")
+    }
+    out = impute_first_downs(frames, rules)
+    assert out["QB"]["rush_fd"].iloc[0] == pytest.approx(50.8)
+    assert out["RB"]["rush_fd"].iloc[0] == pytest.approx(50.8)
+
+
+def test_first_downs_are_left_alone_when_the_league_does_not_score_them():
+    rules = ScoringRules(stats={"rec_yds": 0.1}, name="test")
+    frame = pd.DataFrame({"id": ["A"], "pos": ["WR"], "data_src": ["CBS"],
+                          "rec_yds": [1000.0]})
+    out = impute_first_downs({"WR": frame}, rules)
+    assert "rec_fd" not in out["WR"].columns
+
+
+def test_quarterbacks_get_no_receiving_first_down_estimate():
+    """No receiving rate was supplied for quarterbacks, so none is invented."""
+    rules = ScoringRules(stats={"rec_yds": 0.1}, by_pos={"QB": {"rec_fd": 0.5}},
+                         name="test")
+    frame = pd.DataFrame({"id": ["A"], "pos": ["QB"], "data_src": ["CBS"],
+                          "rec_yds": [100.0]})
+    assert "rec_fd" not in impute_first_downs({"QB": frame}, rules)["QB"].columns
+
+
+def test_a_reported_first_down_figure_is_kept_over_the_estimate():
+    rules = ScoringRules(stats={"rec_yds": 0.1}, by_pos={"WR": {"rec_fd": 0.5}},
+                         name="test")
+    frame = pd.DataFrame({"id": ["A", "A"], "pos": "WR", "data_src": ["CBS", "ESPN"],
+                          "rec_yds": [1000.0, 1000.0], "rec_fd": [60.0, np.nan]})
+    out = impute_first_downs({"WR": frame}, rules)["WR"]
+    assert out["rec_fd"].iloc[0] == pytest.approx(60.0)
+    assert out["rec_fd"].iloc[1] == pytest.approx(48.3)

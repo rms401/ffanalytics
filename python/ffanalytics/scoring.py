@@ -34,11 +34,11 @@ SCORING_STATS: dict[str, tuple[str, ...]] = {
     ),
     "rushing": (
         "rush_att", "rush_yds", "rush_tds", "rush_40_yds",
-        "rush_100_yds", "rush_150_yds", "rush_200_yds",
+        "rush_100_yds", "rush_150_yds", "rush_200_yds", "rush_fd",
     ),
     "receiving": (
         "rec", "rec_tgt", "rec_yds", "rec_tds", "rec_40_yds",
-        "rec_100_yds", "rec_150_yds", "rec_200_yds",
+        "rec_100_yds", "rec_150_yds", "rec_200_yds", "rec_fd",
     ),
     "misc": ("fumbles_lost", "fumbles_total", "sacks", "two_pts"),
     "kicking": (

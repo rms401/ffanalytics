@@ -15,7 +15,11 @@ import numpy as np
 import pandas as pd
 
 from . import stats as st
-from .impute import impute_bonus_columns, impute_missing_stats
+from .impute import (
+    impute_bonus_columns,
+    impute_first_downs,
+    impute_missing_stats,
+)
 from .players import DATA_DIR, player_table
 from .scoring import DEFAULT_SCORING, ScoringRules, score_points_allowed
 from .sources import SOURCES
@@ -288,6 +292,7 @@ def projections_table(
 
     frames = impute_missing_stats(frames, scoring_rules)
     frames = impute_bonus_columns(frames, scoring_rules)
+    frames = impute_first_downs(frames, scoring_rules)
     frames = source_points(frames, scoring_rules, week=scrape.week)
 
     tables = []

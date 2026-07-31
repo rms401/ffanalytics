@@ -51,14 +51,19 @@ Reception bonuses land on the right position, field goal values combine the
 flat rate with the distance bonus, and the points-allowed brackets come across
 in order.
 
-Some settings have no stat behind them — nobody projects first downs, or
-touchdowns of 40+ yards. Those are **reported, not silently dropped**:
+First downs are not published by any site, but they track yardage closely
+enough to estimate: rushing first downs at 0.0508 per rushing yard, receiving
+first downs at 0.0450 (RB), 0.0483 (WR) and 0.0503 (TE) per receiving yard.
+Passing first downs have no rate behind them and stay unscored.
+
+What is genuinely unprojectable — how long a touchdown was, mostly — is
+**reported, not silently dropped**:
 
 ```
   scoring settings with no projectable stat (points your league awards
   that no source projects):
-    bonus_fd_qb = 0.5
     pass_td_50p = 2
+    rush_td_40p = 1
     ...
 ```
 

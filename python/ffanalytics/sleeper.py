@@ -23,6 +23,7 @@ import pandas as pd
 import requests
 
 from . import cache
+from .impute import FIRST_DOWN_RATES
 from .players import resolve_ids
 from .scoring import PointsAllowedTier, ScoringRules
 
@@ -346,6 +347,14 @@ _MISS_DISTRIBUTION = {
     "fgmiss_50p": 0.52,
 }
 
+#: Sleeper's per-position first-down bonus keys.
+_FIRST_DOWN_BONUS = {
+    "QB": "bonus_fd_qb",
+    "RB": "bonus_fd_rb",
+    "WR": "bonus_fd_wr",
+    "TE": "bonus_fd_te",
+}
+
 _POINTS_ALLOWED = [
     ("pts_allow_0", 0.0),
     ("pts_allow_1_6", 6.0),
@@ -359,8 +368,7 @@ _POINTS_ALLOWED = [
 #: Settings we knowingly ignore because no source projects the underlying
 #: event.  Anything outside this list that goes unmapped is reported loudly.
 _NO_PROJECTABLE_STAT = {
-    "bonus_fd_qb", "bonus_fd_rb", "bonus_fd_wr", "bonus_fd_te",
-    "pass_fd", "rush_fd", "rec_fd", "fd",
+    "pass_fd", "fd",
     "pass_td_40p", "pass_td_50p", "pass_int_td",
     "rush_td_40p", "rush_td_50p", "rec_td_40p", "rec_td_50p",
     "rec_0_4", "rec_5_9", "rec_10_19", "rec_20_29", "rec_30_39",
@@ -454,6 +462,29 @@ def scoring_rules_from_sleeper(
         by_pos["TE"] = {"rec": stats.get("rec", 0.0) + te_bonus}
     elif "bonus_rec_te" in settings:
         used.add("bonus_rec_te")
+
+    # First downs.  Sleeper prices them per position; we can estimate rushing
+    # and receiving first downs from yardage, so those are scored.  Passing
+    # first downs have no estimate behind them and stay unscored.
+    for key in ("rush_fd", "rec_fd"):
+        value = _value(settings, key)
+        if value is not None:
+            used.add(key)
+            if value:
+                stats[key] = value
+
+    for position, key in _FIRST_DOWN_BONUS.items():
+        value = _value(settings, key)
+        if value is None:
+            continue
+        used.add(key)
+        if not value:
+            continue
+        for stat, rates in FIRST_DOWN_RATES.items():
+            if position in rates:
+                by_pos.setdefault(position, {})[stat] = (
+                    stats.get(stat, 0.0) + value
+                )
 
     unmapped = {
         key: value for key, value in settings.items()

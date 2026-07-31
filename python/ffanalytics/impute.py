@@ -24,7 +24,13 @@ import pandas as pd
 
 from .players import DATA_DIR
 
-__all__ = ["impute_missing_stats", "impute_bonus_columns", "from_rate", "from_mean"]
+__all__ = [
+    "impute_missing_stats",
+    "impute_bonus_columns",
+    "impute_first_downs",
+    "from_rate",
+    "from_mean",
+]
 
 
 @functools.lru_cache(maxsize=1)
@@ -205,6 +211,58 @@ def impute_missing_stats(frames: Mapping[str, pd.DataFrame],
             frame[column] = filled.reindex(frame.index)
 
         out[position] = frame
+    return out
+
+
+#: First downs per yard, by position.
+#:
+#: No site projects first downs, but they track yardage closely enough to be
+#: estimated from it.  Rushing first downs come at one rate regardless of who
+#: is carrying; receiving first downs differ by position, because a back's
+#: catches are shorter and convert less often than a tight end's.
+#:
+#: There is deliberately no passing rate here: none was supplied, so a league
+#: that scores passing first downs still has that part reported as unscored
+#: rather than guessed at.
+FIRST_DOWN_RATES: Mapping[str, Mapping[str, float]] = {
+    "rush_fd": {"QB": 0.0508, "RB": 0.0508, "WR": 0.0508, "TE": 0.0508},
+    "rec_fd": {"RB": 0.0450, "WR": 0.0483, "TE": 0.0503},
+}
+
+#: The yardage column each first-down estimate is built from.
+_FIRST_DOWN_SOURCE = {"rush_fd": "rush_yds", "rec_fd": "rec_yds"}
+
+
+def impute_first_downs(frames: Mapping[str, pd.DataFrame],
+                       scoring_rules) -> dict[str, pd.DataFrame]:
+    """Estimate first downs from yardage, for leagues that score them."""
+    out = dict(frames)
+
+    for position, frame in frames.items():
+        scored = {
+            stat for stat, value in scoring_rules.for_position(position).items()
+            if value
+        }
+        estimates = {
+            stat: FIRST_DOWN_RATES[stat][position]
+            for stat in ("rush_fd", "rec_fd")
+            if stat in scored
+            and position in FIRST_DOWN_RATES[stat]
+            and _FIRST_DOWN_SOURCE[stat] in frame.columns
+        }
+        if not estimates:
+            continue
+
+        frame = frame.copy()
+        for stat, rate in estimates.items():
+            yards = pd.to_numeric(frame[_FIRST_DOWN_SOURCE[stat]], errors="coerce")
+            estimate = (yards * rate).clip(lower=0)
+            frame[stat] = (
+                pd.to_numeric(frame[stat], errors="coerce").fillna(estimate)
+                if stat in frame.columns else estimate
+            )
+        out[position] = frame
+
     return out
 
 

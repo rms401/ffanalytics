@@ -99,14 +99,17 @@ def test_defensive_settings_map_onto_team_defense_stats(translated):
 
 def test_settings_with_no_projectable_stat_are_reported_not_dropped(translated):
     rules, unscored = translated
-    assert unscored["bonus_fd_qb"] == 0.5      # nobody projects first downs
-    assert unscored["pass_td_50p"] == 2.0      # nor how long a touchdown was
+    assert unscored["pass_td_50p"] == 2.0      # nobody projects TD length
+    assert unscored["rec_td_40p"] == 1.0
     # ...and nothing that *was* scored shows up here
     assert "pass_yd" not in unscored
     assert "bonus_rec_te" not in unscored
     # a 40+ yard completion is projectable, so it is scored rather than reported
     assert "pass_cmp_40p" not in unscored
     assert rules.stats["pass_40_yds"] == 0.5
+    # first downs are estimated from yardage, so they are scored too
+    assert "bonus_fd_qb" not in unscored
+    assert rules.for_position("QB")["rush_fd"] == 0.5
 
 
 def test_settings_worth_zero_points_are_not_reported_as_missing(translated):
@@ -185,6 +188,33 @@ def test_long_completion_bonus_is_scored_like_the_rushing_and_receiving_ones():
 def test_touchdown_length_bonuses_remain_unprojectable():
     """No source projects how long a touchdown was."""
     _, unprojectable = scoring_rules_from_sleeper(
-        {"pass_td_50p": 2.0, "rush_td_40p": 1.0, "bonus_fd_wr": 0.5}
+        {"pass_td_50p": 2.0, "rush_td_40p": 1.0, "pass_int_td": -3.0}
     )
-    assert set(unprojectable) == {"pass_td_50p", "rush_td_40p", "bonus_fd_wr"}
+    assert set(unprojectable) == {"pass_td_50p", "rush_td_40p", "pass_int_td"}
+
+
+def test_first_down_bonuses_are_scored_per_position():
+    rules, unprojectable = scoring_rules_from_sleeper({
+        "bonus_fd_qb": 0.5, "bonus_fd_rb": 0.5,
+        "bonus_fd_wr": 0.5, "bonus_fd_te": 0.5,
+    })
+    assert rules.for_position("QB")["rush_fd"] == 0.5
+    assert rules.for_position("RB")["rec_fd"] == 0.5
+    assert rules.for_position("WR")["rec_fd"] == 0.5
+    assert rules.for_position("TE")["rec_fd"] == 0.5
+    assert not any(key.startswith("bonus_fd_") for key in unprojectable)
+
+
+def test_a_first_down_bonus_does_not_clobber_the_tight_end_premium():
+    rules, _ = scoring_rules_from_sleeper(
+        {"rec": 1.0, "bonus_rec_te": 1.5, "bonus_fd_te": 0.5}
+    )
+    te = rules.for_position("TE")
+    assert te["rec"] == 2.5
+    assert te["rec_fd"] == 0.5
+
+
+def test_passing_first_downs_stay_unprojectable():
+    """No passing first-down rate was supplied, so it is reported not guessed."""
+    _, unprojectable = scoring_rules_from_sleeper({"pass_fd": 0.5})
+    assert unprojectable["pass_fd"] == 0.5
