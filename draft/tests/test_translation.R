@@ -26,7 +26,11 @@ stopifnot(
 )
 
 # TE premium branch: TE rec = base rec (0 in this league) + bonus_rec_te (1)
+# A position-custom group holds ONLY all_pos + position sublists; a leftover
+# flat scalar makes projections_table() fail with "subscript out of bounds".
 stopifnot(
+  setequal(names(tr$scoring$rec), c("all_pos", "QB", "RB", "WR", "TE")),
+  all(vapply(tr$scoring$rec[c("QB", "RB", "WR", "TE")], is.list, logical(1))),
   tr$scoring$rec$TE$rec == 1,
   tr$scoring$rec$RB$rec == 0,
   tr$scoring$rec$WR$rec == 0,
@@ -45,9 +49,21 @@ stopifnot(
     c(0, 6, 13, 20, 27, 34, 99)
 )
 
+# st_td is a MAPPING, not a gap: Sleeper's player special-teams TD is exactly
+# ffanalytics return_tds (kick/punt/blocked-kick returns).
+stopifnot(
+  tr$scoring$ret$return_tds == 6,
+  "st_td" %in% names(tr$mapped),
+  !"st_td" %in% names(tr$disclosed)
+)
+# ...and it still shares the common-value set with the legacy kr_td/pr_td keys.
+st_conf <- translate_scoring(list(st_td = 6, kr_td = 4))
+stopifnot("conflict:return_tds" %in% names(st_conf$disclosed),
+          st_conf$scoring$ret$return_tds == 0)
+
 # ---- Gate A: disclosure and unknown-key behavior ----------------------------
 # Known-unmappable keys nonzero in this league must be disclosed, not dropped.
-for (k in c("st_td", "fum_rec_td", "rec_td_40p", "rush_td_40p", "pass_td_40p")) {
+for (k in c("fum_rec_td", "rec_td_40p", "rush_td_40p", "pass_td_40p")) {
   if (!is.null(fixture$scoring_settings[[k]]) && fixture$scoring_settings[[k]] != 0) {
     stopifnot(k %in% names(tr$disclosed))
   }

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS league (
   scoring_settings_json   TEXT,  -- raw Sleeper scoring_settings, verbatim (Gate A)
   translated_scoring_json TEXT,
   unmapped_keys_json      TEXT,  -- disclosed known-unmappable keys, nonzero only
+  gap_method_json         TEXT,  -- per nonzero key: method, column, materiality
   vor_baseline_json       TEXT,
   draft_id                TEXT,  -- cached so the app works offline
   scraped_at              TEXT,

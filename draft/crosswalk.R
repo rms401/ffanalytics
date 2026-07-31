@@ -7,8 +7,14 @@
 # never a guess between two players. DSTs match by team code, which IS the
 # Sleeper player_id for defenses.
 
-DP_PLAYERIDS_URL <-
+# raw.githubusercontent.com first: it is the canonical CDN path for raw files,
+# and the github.com/<owner>/<repo>/raw/ redirect is 403'd by some corporate and
+# CI egress proxies. The redirect form stays as a fallback.
+DP_PLAYERIDS_URLS <- c(
+  "https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv",
   "https://github.com/dynastyprocess/data/raw/master/files/db_playerids.csv"
+)
+DP_PLAYERIDS_URL <- DP_PLAYERIDS_URLS[1]
 
 fetch_dp_playerids <- function(cache_dir = file.path(draft_root(), "cache"),
                                max_age_hours = 24) {
@@ -28,16 +34,20 @@ fetch_dp_playerids <- function(cache_dir = file.path(draft_root(), "cache"),
   }
   if (age > max_age_hours) {
     tmp <- tempfile(fileext = ".csv")
-    ok <- tryCatch({
-      utils::download.file(DP_PLAYERIDS_URL, tmp, quiet = TRUE,
-                           method = "libcurl")
-      looks_valid(tmp)
-    }, error = function(e) FALSE, warning = function(w) FALSE)
+    ok <- FALSE
+    for (url in DP_PLAYERIDS_URLS) {
+      ok <- tryCatch({
+        utils::download.file(url, tmp, quiet = TRUE, method = "libcurl")
+        looks_valid(tmp)
+      }, error = function(e) FALSE, warning = function(w) FALSE)
+      if (ok) break
+    }
     if (ok) {
       file.copy(tmp, dest, overwrite = TRUE)
     } else if (!looks_valid(dest)) {
-      stop("Could not download DynastyProcess player ids (",
-           DP_PLAYERIDS_URL, ") and no valid cached copy exists at ", dest)
+      stop("Could not download DynastyProcess player ids from any of:\n  ",
+           paste(DP_PLAYERIDS_URLS, collapse = "\n  "),
+           "\nand no valid cached copy exists at ", dest)
     } else {
       warning("DynastyProcess download failed; using cached copy from ",
               format(file.mtime(dest)))
@@ -47,6 +57,18 @@ fetch_dp_playerids <- function(cache_dir = file.path(draft_root(), "cache"),
                         colClasses = "character")
   df[df == ""] <- NA
   df
+}
+
+# Named character vector mfl_id -> sleeper_id, straight off the DynastyProcess
+# table. draft/gap_fill.R needs this BEFORE projections run (to join Sleeper
+# history onto the scrape); attach_sleeper_ids() below needs it after, together
+# with the DST and name-match fallbacks.
+mfl_to_sleeper_map <- function(cache_dir = file.path(draft_root(), "cache")) {
+  dp <- fetch_dp_playerids(cache_dir)
+  stopifnot(all(c("mfl_id", "sleeper_id") %in% names(dp)))
+  xw <- dp[!is.na(dp$mfl_id) & !is.na(dp$sleeper_id), c("mfl_id", "sleeper_id")]
+  xw <- xw[!duplicated(xw$mfl_id), ]
+  stats::setNames(xw$sleeper_id, xw$mfl_id)
 }
 
 clean_player_name <- function(x) {
@@ -63,11 +85,7 @@ clean_player_name <- function(x) {
 # Returns list(rankings = <with sleeper_id>, report = list(...)).
 attach_sleeper_ids <- function(rankings, sleeper_players,
                                cache_dir = file.path(draft_root(), "cache")) {
-  dp <- fetch_dp_playerids(cache_dir)
-  stopifnot(all(c("mfl_id", "sleeper_id") %in% names(dp)))
-  xw <- dp[!is.na(dp$mfl_id) & !is.na(dp$sleeper_id), c("mfl_id", "sleeper_id")]
-  xw <- xw[!duplicated(xw$mfl_id), ]
-  id_map <- stats::setNames(xw$sleeper_id, xw$mfl_id)
+  id_map <- mfl_to_sleeper_map(cache_dir)
 
   rankings$sleeper_id <- unname(id_map[as.character(rankings$mfl_id)])
 

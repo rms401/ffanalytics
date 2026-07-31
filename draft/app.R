@@ -65,8 +65,8 @@ ui <- fluidPage(
       ),
       h4("League configuration"),
       verbatimTextOutput("league_config"),
-      h4("Scoring rules NOT reflected in projections (disclosed)"),
-      tableOutput("disclosed_tbl"),
+      h4("Scoring coverage (every nonzero league rule)"),
+      tableOutput("coverage_tbl"),
       h4("Unmatched picks (drafted on Sleeper, no board match)"),
       uiOutput("resolver"),
       h4("Crosswalk misses in top 200"),
@@ -325,17 +325,33 @@ server <- function(input, output, session) {
     )
   })
 
-  output$disclosed_tbl <- renderTable({
+  # How every nonzero league rule reaches the projections, and what it is worth.
+  # "method" is one of: sources (a projection source supplies the stat),
+  # package-imputed (ffanalytics synthesises the column), estimated(YYYY-YYYY)
+  # (draft/gap_fill.R estimated it from Sleeper history), below-threshold.
+  output$coverage_tbl <- renderTable({
     lg <- league()
-    d <- jsonlite::fromJSON(lg$unmapped_keys_json %||% "{}")
-    if (length(d) == 0) {
-      data.frame(note = "none - all nonzero rules translated")
-    } else {
-      data.frame(key = names(d),
-                 value = vapply(d, function(x) {
-                   paste(unlist(x), collapse = ", ")
-                 }, character(1)))
+    g <- jsonlite::fromJSON(lg$gap_method_json %||% "{}", simplifyVector = FALSE)
+    if (length(g) == 0) {
+      d <- jsonlite::fromJSON(lg$unmapped_keys_json %||% "{}")
+      if (length(d) == 0) {
+        return(data.frame(note = "run draft/run_projections.R to record coverage"))
+      }
+      return(data.frame(key = names(d),
+                        value = vapply(d, function(x) {
+                          paste(unlist(x), collapse = ", ")
+                        }, character(1))))
     }
+    out <- data.frame(
+      key = names(g),
+      value = vapply(g, function(x) as.numeric(x$value %||% NA), numeric(1)),
+      method = vapply(g, function(x) as.character(x$method %||% ""), character(1)),
+      stat = vapply(g, function(x) as.character(x$column %||% ""), character(1)),
+      pts = vapply(g, function(x) as.numeric(x$materiality_pts %||% NA), numeric(1)),
+      pos = vapply(g, function(x) as.character(x$materiality_pos %||% ""), character(1)),
+      stringsAsFactors = FALSE
+    )
+    out[order(-out$pts), ]
   })
 
   output$xw_miss_tbl <- renderTable({

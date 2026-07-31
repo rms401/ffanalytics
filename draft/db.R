@@ -27,6 +27,24 @@ init_db <- function(con, schema_path = file.path(draft_root(), "schema.sql")) {
   for (stmt in strsplit(ddl, ";", fixed = TRUE)[[1]]) {
     if (nzchar(trimws(stmt))) DBI::dbExecute(con, stmt)
   }
+  migrate_db(con)
+  invisible(con)
+}
+
+# CREATE TABLE IF NOT EXISTS cannot add a column to a database that already
+# exists, so columns added after the first release are patched in here. Each
+# ALTER is a no-op error on a database that already has the column.
+migrate_db <- function(con) {
+  added <- list(league = c(gap_method_json = "TEXT"))
+  for (tbl in names(added)) {
+    have <- DBI::dbGetQuery(con, sprintf("PRAGMA table_info(%s)", tbl))$name
+    for (col in names(added[[tbl]])) {
+      if (!col %in% have) {
+        DBI::dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN %s %s",
+                                    tbl, col, added[[tbl]][[col]]))
+      }
+    }
+  }
   invisible(con)
 }
 
@@ -36,7 +54,8 @@ upsert_league <- function(con, league) {
   league$updated_at <- now_iso()
   cols <- c("league_id", "name", "season", "total_rosters", "roster_positions_json",
             "scoring_settings_json", "translated_scoring_json", "unmapped_keys_json",
-            "vor_baseline_json", "draft_id", "scraped_at", "updated_at")
+            "gap_method_json", "vor_baseline_json", "draft_id", "scraped_at",
+            "updated_at")
   league <- league[intersect(cols, names(league))]
   sets <- paste0(setdiff(names(league), "league_id"), " = excluded.",
                  setdiff(names(league), "league_id"), collapse = ", ")
@@ -61,7 +80,7 @@ list_leagues <- function(con) {
 }
 
 set_league_field <- function(con, league_id, field, value) {
-  stopifnot(field %in% c("draft_id", "scraped_at"))
+  stopifnot(field %in% c("draft_id", "scraped_at", "gap_method_json"))
   DBI::dbExecute(
     con,
     sprintf("UPDATE league SET %s = $val, updated_at = $now WHERE league_id = $id", field),

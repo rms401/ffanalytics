@@ -8,7 +8,10 @@
 # classified into exactly one of three states, decided here at build time:
 #
 #   mapped            -> value written into the ffanalytics scoring list
-#   known-unmappable  -> "disclosed": reported loudly, stored, shown in the app
+#   known-unmappable  -> "disclosed": no ffanalytics rule expresses this stat.
+#                        draft/gap_fill.R estimates these from Sleeper's own
+#                        historical stats and injects them; anything it cannot
+#                        estimate is reported with its measured points impact.
 #   unknown           -> hard stop (a key outside the universe means Sleeper
 #                        shipped a new scoring feature; update this table)
 #
@@ -80,8 +83,12 @@ sleeper_map_sets <- list(
   return_yds = list(keys = c("kr_yd", "pr_yd"),
                     ffa_group = "ret", ffa_key = "return_yds"),
   # kr_td/pr_td are legacy (current Sleeper UI offers st_td instead) but old
-  # leagues may still carry them.
-  return_tds = list(keys = c("kr_td", "pr_td"),
+  # leagues may still carry them. st_td is Sleeper's current special-teams TD
+  # for a PLAYER, which is exactly what ffanalytics scores as return_tds:
+  # verified against the 2025 stats endpoint, st_td (27 leaguewide) covers
+  # kr_td (7) + pr_td (15) plus blocked-kick / special-teams fumble return TDs,
+  # and no source distinguishes those. Mapping beats estimating here.
+  return_tds = list(keys = c("kr_td", "pr_td", "st_td"),
                     ffa_group = "ret", ffa_key = "return_tds"),
   fg_50      = list(keys = c("fgm_50p", "fgm_50_59", "fgm_60p"),
                     ffa_group = "kick", ffa_key = "fg_50")
@@ -131,7 +138,9 @@ sleeper_keys_unmappable <- c(
   # special-teams defense (team) and special-teams player
   "def_st_td", "def_st_ff", "def_st_fum_rec", "def_st_tkl_solo", "def_kr_yd",
   "def_pr_yd", "fg_ret_yd", "blk_kick_ret_yd",
-  "st_td", "st_ff", "st_fum_rec", "st_tkl_solo",
+  # st_td is MAPPED (see sleeper_map_sets$return_tds above); these three have no
+  # ffanalytics rule and are estimated by draft/gap_fill.R.
+  "st_ff", "st_fum_rec", "st_tkl_solo",
   # IDP
   "idp_tkl_loss", "idp_qb_hit", "idp_sack_yd", "idp_int_ret_yd",
   "idp_fum_ret_yd", "idp_blk_kick", "idp_pass_def_3p", "bonus_sack_2p",
@@ -234,12 +243,18 @@ translate_scoring <- function(scoring_settings) {
   rec_bonus[is.na(rec_bonus)] <- 0
   if (any(rec_bonus != 0)) {
     flat_rec <- out$rec[setdiff(names(out$rec), "all_pos")]
-    out$rec$all_pos <- FALSE
+    # A position-custom group must contain ONLY all_pos plus position sublists,
+    # exactly as custom_scoring() builds it. Leaving the flat scalars alongside
+    # the sublists blows up projections_table(), which does
+    #   lapply(scoring_rules$rec[names != "all_pos"], `[[`, "rec")
+    # to derive the league type and hits "subscript out of bounds" on a scalar.
+    pos_rec_l <- list(all_pos = FALSE)
     for (pos in names(rec_bonus)) {
       pos_rec <- flat_rec
       pos_rec$rec <- pos_rec$rec + rec_bonus[[pos]]
-      out$rec[[pos]] <- pos_rec
+      pos_rec_l[[pos]] <- pos_rec
     }
+    out$rec <- pos_rec_l
     mapped[intersect(sleeper_keys_te_premium, names(nz))] <-
       nz[intersect(sleeper_keys_te_premium, names(nz))]
   }

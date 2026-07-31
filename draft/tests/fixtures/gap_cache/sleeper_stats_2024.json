@@ -1,0 +1,5 @@
+{
+  "1": {"gp": 17, "rec": 100, "rec_td": 10, "rec_td_40p": 2, "rec_fd": 50, "fum_rec_td": 1},
+  "2": {"gp": 17, "rec": 20,  "rec_td": 0,  "rec_fd": 10},
+  "3": {"gp": 17, "rush_td": 10, "rush_td_40p": 1}
+}
