@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ffanalytics"
-version = "3.1.17"
-description = "Scrape data for fantasy football - Python port of the ffanalytics R package"
+version = "4.0.0"
+description = "Scrape fantasy football projections and score them for your Sleeper league"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pandas>=1.5",
     "numpy>=1.23",
@@ -22,6 +22,9 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
 
+[project.scripts]
+ffanalytics = "ffanalytics.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/FantasyFootballAnalytics/ffanalytics"
 Issues = "https://github.com/FantasyFootballAnalytics/ffanalytics/issues"
@@ -29,7 +32,10 @@ Issues = "https://github.com/FantasyFootballAnalytics/ffanalytics/issues"
 [tool.setuptools.packages.find]
 include = ["ffanalytics*"]
 
+[tool.setuptools.package-data]
+ffanalytics = ["data/*.csv", "data/*.json"]
+
 [tool.pytest.ini_options]
 markers = [
-    "network: test performs live network requests (deselect with '-m \"not network\"')",
+    "network: test makes live network requests (deselect with '-m \"not network\"')",
 ]
