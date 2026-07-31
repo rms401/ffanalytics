@@ -31,6 +31,7 @@ SCORING_STATS: dict[str, tuple[str, ...]] = {
     "passing": (
         "pass_att", "pass_comp", "pass_inc", "pass_yds", "pass_tds", "pass_int",
         "pass_40_yds", "pass_300_yds", "pass_350_yds", "pass_400_yds",
+        "pass_fd",
     ),
     "rushing": (
         "rush_att", "rush_yds", "rush_tds", "rush_40_yds",

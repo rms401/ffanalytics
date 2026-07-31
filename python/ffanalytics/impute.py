@@ -214,28 +214,66 @@ def impute_missing_stats(frames: Mapping[str, pd.DataFrame],
     return out
 
 
-#: First downs per yard, by position.
-#:
-#: No site projects first downs, but they track yardage closely enough to be
-#: estimated from it.  Rushing first downs come at one rate regardless of who
-#: is carrying; receiving first downs differ by position, because a back's
-#: catches are shorter and convert less often than a tight end's.
-#:
-#: There is deliberately no passing rate here: none was supplied, so a league
-#: that scores passing first downs still has that part reported as unscored
-#: rather than guessed at.
+#: Receiving and rushing first downs per yard, for the positions whose first
+#: downs track yardage.  Quarterbacks are handled separately below.
 FIRST_DOWN_RATES: Mapping[str, Mapping[str, float]] = {
-    "rush_fd": {"QB": 0.0508, "RB": 0.0508, "WR": 0.0508, "TE": 0.0508},
+    "rush_fd": {"RB": 0.0508, "WR": 0.0508, "TE": 0.0508},
     "rec_fd": {"RB": 0.0450, "WR": 0.0483, "TE": 0.0503},
 }
 
-#: The yardage column each first-down estimate is built from.
+#: Passing first downs, as a share of passing yards.
+PASS_FD_PER_YARD = 0.0483
+
+#: A quarterback's rushing first downs come from his carries rather than his
+#: yards, and the conversion rate rises with how often he runs: a quarterback
+#: carrying twice a game is scrambling, one carrying five times a game is being
+#: called for short-yardage runs that convert far more often.
+QB_RUSH_FD_RATES = ((2.0, 0.261), (4.0, 0.342), (float("inf"), 0.378))
+
+#: Which first-down stats each position can have.  A quarterback catches
+#: nothing, so he has no receiving first downs at all.
+FIRST_DOWN_STATS: Mapping[str, tuple[str, ...]] = {
+    "QB": ("pass_fd", "rush_fd"),
+    "RB": ("rush_fd", "rec_fd"),
+    "WR": ("rush_fd", "rec_fd"),
+    "TE": ("rush_fd", "rec_fd"),
+}
+
+#: Games in a season, used when a source does not report a game count.
+_SEASON_GAMES = 17
+
 _FIRST_DOWN_SOURCE = {"rush_fd": "rush_yds", "rec_fd": "rec_yds"}
 
 
-def impute_first_downs(frames: Mapping[str, pd.DataFrame],
-                       scoring_rules) -> dict[str, pd.DataFrame]:
-    """Estimate first downs from yardage, for leagues that score them."""
+def _qb_rush_first_downs(frame: pd.DataFrame, games: float) -> pd.Series:
+    """Rushing first downs for a quarterback, from carries per game."""
+    attempts = pd.to_numeric(frame["rush_att"], errors="coerce")
+    if "rush_yds" in frame.columns and attempts.isna().any():
+        attempts = from_rate(attempts, pd.to_numeric(frame["rush_yds"], errors="coerce"))
+
+    per_game = pd.to_numeric(frame.get("games"), errors="coerce") \
+        if "games" in frame.columns else pd.Series(np.nan, index=frame.index)
+    per_game = per_game.where(per_game > 0).fillna(games)
+
+    carries_per_game = attempts / per_game
+    low, mid, _ = QB_RUSH_FD_RATES
+    rate = np.select(
+        [carries_per_game < low[0], carries_per_game <= mid[0]],
+        [low[1], mid[1]],
+        default=QB_RUSH_FD_RATES[2][1],
+    )
+    return (attempts * rate).clip(lower=0)
+
+
+def impute_first_downs(frames: Mapping[str, pd.DataFrame], scoring_rules,
+                       week: int = 0) -> dict[str, pd.DataFrame]:
+    """Estimate first downs, for leagues that score them.
+
+    No site publishes first downs, but they track the box score closely enough
+    to estimate: passing and receiving first downs from yardage, and a
+    quarterback's rushing first downs from how often he carries.
+    """
+    games = _SEASON_GAMES if week == 0 else 1
     out = dict(frames)
 
     for position, frame in frames.items():
@@ -243,20 +281,37 @@ def impute_first_downs(frames: Mapping[str, pd.DataFrame],
             stat for stat, value in scoring_rules.for_position(position).items()
             if value
         }
-        estimates = {
-            stat: FIRST_DOWN_RATES[stat][position]
-            for stat in ("rush_fd", "rec_fd")
-            if stat in scored
-            and position in FIRST_DOWN_RATES[stat]
-            and _FIRST_DOWN_SOURCE[stat] in frame.columns
-        }
-        if not estimates:
+        wanted = [stat for stat in FIRST_DOWN_STATS.get(position, ()) if stat in scored]
+        if not wanted:
             continue
 
         frame = frame.copy()
-        for stat, rate in estimates.items():
-            yards = pd.to_numeric(frame[_FIRST_DOWN_SOURCE[stat]], errors="coerce")
-            estimate = (yards * rate).clip(lower=0)
+        estimates: dict[str, pd.Series] = {}
+
+        for stat in wanted:
+            if stat == "pass_fd":
+                if "pass_yds" not in frame.columns:
+                    continue
+                yards = pd.to_numeric(frame["pass_yds"], errors="coerce")
+                estimates[stat] = (yards * PASS_FD_PER_YARD).clip(lower=0)
+
+            elif stat == "rush_fd" and position == "QB":
+                if "rush_att" not in frame.columns:
+                    continue
+                estimates[stat] = _qb_rush_first_downs(frame, games)
+
+            else:
+                rate = FIRST_DOWN_RATES[stat].get(position)
+                source = _FIRST_DOWN_SOURCE[stat]
+                if rate is None or source not in frame.columns:
+                    continue
+                yards = pd.to_numeric(frame[source], errors="coerce")
+                estimates[stat] = (yards * rate).clip(lower=0)
+
+        if not estimates:
+            continue
+
+        for stat, estimate in estimates.items():
             frame[stat] = (
                 pd.to_numeric(frame[stat], errors="coerce").fillna(estimate)
                 if stat in frame.columns else estimate

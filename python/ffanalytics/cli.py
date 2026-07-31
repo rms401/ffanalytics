@@ -7,8 +7,8 @@ import sys
 
 import pandas as pd
 
-from . import cache
 from .adp import ADP_SOURCES
+from .db import write_sqlite
 from .league import build_league_projections
 from .scrape import POSITIONS
 from .sleeper import leagues_for_user
@@ -43,18 +43,15 @@ def _parser() -> argparse.ArgumentParser:
                         help="how to combine the sources (default: average)")
     parser.add_argument("--top", type=int, default=30,
                         help="how many players to print (default: 30)")
-    parser.add_argument("--out", "-o", metavar="PATH",
-                        help="write the full table to a .csv or .xlsx file")
+    parser.add_argument("--db", "-d", metavar="PATH", default="ffanalytics.sqlite",
+                        help="SQLite file to write the run to "
+                             "(default: ffanalytics.sqlite; '-' to skip)")
     parser.add_argument("--available-only", action="store_true",
                         help="print only players nobody in the league has rostered")
     parser.add_argument("--no-ecr", action="store_true",
                         help="skip the expert consensus rankings scrape")
     parser.add_argument("--no-adp", action="store_true",
                         help=f"skip average draft position ({', '.join(ADP_SOURCES)})")
-    parser.add_argument("--refresh", action="store_true",
-                        help="ignore cached scrapes and fetch everything again")
-    parser.add_argument("--clear-cache", action="store_true",
-                        help="empty the cache and exit")
     parser.add_argument("--list-sources", action="store_true",
                         help="show what each site covers and exit")
     return parser
@@ -78,10 +75,6 @@ def _print_sources() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-
-    if args.clear_cache:
-        print(f"Removed {cache.clear()} cached files from {cache.cache_dir()}")
-        return 0
 
     if args.list_sources:
         _print_sources()
@@ -109,7 +102,6 @@ def main(argv: list[str] | None = None) -> int:
         avg_type=args.avg_type,
         with_ecr=not args.no_ecr,
         with_adp=not args.no_adp,
-        cache_ttl=0 if args.refresh else None,
     )
 
     print("\n" + result.report())
@@ -119,9 +111,12 @@ def main(argv: list[str] | None = None) -> int:
     with pd.option_context("display.width", 220, "display.max_columns", 40):
         print(table.head(args.top).pipe(_printable).to_string(index=False))
 
-    if args.out:
-        _write(result.table, args.out)
-        print(f"\nWrote {len(result.table)} rows to {args.out}")
+    if args.db and args.db != "-":
+        written = write_sqlite(result, args.db, avg_type=args.avg_type)
+        summary = ", ".join(
+            f"{count} {table}" for table, count in written.items() if count
+        )
+        print(f"\nWrote {summary} to {args.db}")
     return 0
 
 
@@ -137,12 +132,6 @@ def _printable(table: pd.DataFrame) -> pd.DataFrame:
             out[column] = out[column].round(1)
     return out
 
-
-def _write(table: pd.DataFrame, path: str) -> None:
-    if path.endswith(".xlsx"):
-        table.to_excel(path, index=False)
-    else:
-        table.to_csv(path, index=False)
 
 
 def _default_season() -> int:

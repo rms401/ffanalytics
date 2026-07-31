@@ -234,7 +234,6 @@ def build_league_projections(
     avg_type: str = "average",
     with_ecr: bool = True,
     with_adp: bool = True,
-    cache_ttl: float | None = None,
     **scrape_kwargs,
 ) -> LeagueProjections:
     """Scrape, score under your league's rules, rank, and annotate.
@@ -253,8 +252,6 @@ def build_league_projections(
         season = league.season
 
     scrape_options = dict(scrape_kwargs)
-    if cache_ttl is not None:
-        scrape_options["cache_ttl"] = cache_ttl
 
     scrape = scrape_data(sources=sources, positions=positions, season=season,
                          week=week, **scrape_options)

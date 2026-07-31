@@ -12,7 +12,6 @@ import re
 
 import pandas as pd
 
-from . import cache
 from .players import resolve_ids
 from .sources._http import Session
 
@@ -27,7 +26,6 @@ _BASE_URL = "https://www.fantasypros.com/nfl/rankings/"
 #: Only these positions have separate rankings per scoring format.
 _FORMAT_SENSITIVE = ("RB", "WR", "TE", "FLEX")
 _ECR_DATA = re.compile(r"var\s+ecrData\s*=\s*(\{.*?\});", re.S)
-_TTL = 8 * 60 * 60
 
 _EMPTY = pd.DataFrame(columns=["id", "avg", "std_dev", "ecr_rank", "ecr_min", "ecr_max"])
 
@@ -69,11 +67,6 @@ def scrape_ecr(period: str = "draft", position: str = "Overall",
     if period == "weekly" and position == "Overall":
         return _EMPTY.copy()
 
-    key = f"ecr_{period}_{position.lower()}_{scoring.lower()}"
-    cached = cache.load(key, _TTL)
-    if cached is not None:
-        return cached
-
     url = _BASE_URL + _page(period, position, scoring)
     try:
         page = Session().html(url)
@@ -104,5 +97,4 @@ def scrape_ecr(period: str = "draft", position: str = "Overall",
         "ecr_min": pd.to_numeric(players.get("rank_min"), errors="coerce").astype("Int64"),
         "ecr_max": pd.to_numeric(players.get("rank_max"), errors="coerce").astype("Int64"),
     })
-    cache.save(key, out)
     return out

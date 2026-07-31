@@ -292,7 +292,7 @@ def projections_table(
 
     frames = impute_missing_stats(frames, scoring_rules)
     frames = impute_bonus_columns(frames, scoring_rules)
-    frames = impute_first_downs(frames, scoring_rules)
+    frames = impute_first_downs(frames, scoring_rules, week=scrape.week)
     frames = source_points(frames, scoring_rules, week=scrape.week)
 
     tables = []

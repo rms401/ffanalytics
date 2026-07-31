@@ -22,8 +22,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from . import cache
-from .impute import FIRST_DOWN_RATES
+from .impute import FIRST_DOWN_STATS
 from .players import resolve_ids
 from .scoring import PointsAllowedTier, ScoringRules
 
@@ -37,7 +36,6 @@ __all__ = [
 ]
 
 _API = "https://api.sleeper.app/v1"
-_PLAYERS_TTL = 24 * 60 * 60  # Sleeper asks for at most one call a day
 _TIMEOUT = 60
 
 #: Roster slots that start a player, mapped to the positions eligible for them.
@@ -211,18 +209,14 @@ def _fetch_rosters(league_id: str, managers: pd.DataFrame) -> pd.DataFrame:
 # Sleeper's player list
 # ---------------------------------------------------------------------------
 
-def sleeper_player_map(refresh: bool = False) -> pd.DataFrame:
+def sleeper_player_map() -> pd.DataFrame:
     """Sleeper's player list, keyed to our ``id``.
 
     Sleeper's own crosswalk is used where the bundled one already knows the
-    player; the rest are matched on name, position and team.  The download is
-    several megabytes, so it is cached for a day.
+    player; the rest are matched on name, position and team.  This is a
+    several-megabyte download on every call.
     """
-    cached = None if refresh else cache.load("sleeper_players", _PLAYERS_TTL)
-    if cached is not None:
-        return cached
-
-    print("Downloading Sleeper's player list (cached for a day)")
+    print("Downloading Sleeper's player list")
     payload = _get("players/nfl") or {}
 
     rows = []
@@ -252,7 +246,6 @@ def sleeper_player_map(refresh: bool = False) -> pd.DataFrame:
         team=frame["sleeper_team"],
     ).to_numpy()
 
-    cache.save("sleeper_players", frame)
     return frame
 
 
@@ -368,7 +361,7 @@ _POINTS_ALLOWED = [
 #: Settings we knowingly ignore because no source projects the underlying
 #: event.  Anything outside this list that goes unmapped is reported loudly.
 _NO_PROJECTABLE_STAT = {
-    "pass_fd", "fd",
+    "fd",
     "pass_td_40p", "pass_td_50p", "pass_int_td",
     "rush_td_40p", "rush_td_50p", "rec_td_40p", "rec_td_50p",
     "rec_0_4", "rec_5_9", "rec_10_19", "rec_20_29", "rec_30_39",
@@ -466,7 +459,7 @@ def scoring_rules_from_sleeper(
     # First downs.  Sleeper prices them per position; we can estimate rushing
     # and receiving first downs from yardage, so those are scored.  Passing
     # first downs have no estimate behind them and stay unscored.
-    for key in ("rush_fd", "rec_fd"):
+    for key in ("pass_fd", "rush_fd", "rec_fd"):
         value = _value(settings, key)
         if value is not None:
             used.add(key)
@@ -480,11 +473,8 @@ def scoring_rules_from_sleeper(
         used.add(key)
         if not value:
             continue
-        for stat, rates in FIRST_DOWN_RATES.items():
-            if position in rates:
-                by_pos.setdefault(position, {})[stat] = (
-                    stats.get(stat, 0.0) + value
-                )
+        for stat in FIRST_DOWN_STATS.get(position, ()):
+            by_pos.setdefault(position, {})[stat] = stats.get(stat, 0.0) + value
 
     unmapped = {
         key: value for key, value in settings.items()

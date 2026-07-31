@@ -19,8 +19,7 @@ league without touching either.
 """
 
 from .adp import get_adp
-from .cache import clear as clear_cache
-from .cache import listing as cache_listing
+from .db import write_sqlite
 from .ecr import scrape_ecr
 from .league import (
     LeagueProjections,
@@ -83,9 +82,9 @@ __all__ = [
     "player_table",
     "player_ids",
     "resolve_ids",
+    # output
+    "write_sqlite",
     # odds and ends
     "current_season",
     "current_week",
-    "clear_cache",
-    "cache_listing",
 ]

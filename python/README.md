@@ -19,7 +19,7 @@ So this package pulls both halves and puts them together:
 
 ```bash
 pip install -e .
-python -m ffanalytics --league 1328634493078110208 --out projections.csv
+python -m ffanalytics --league 1328634493078110208 --db draft.sqlite
 ```
 
 ```
@@ -51,10 +51,20 @@ Reception bonuses land on the right position, field goal values combine the
 flat rate with the distance bonus, and the points-allowed brackets come across
 in order.
 
-First downs are not published by any site, but they track yardage closely
-enough to estimate: rushing first downs at 0.0508 per rushing yard, receiving
-first downs at 0.0450 (RB), 0.0483 (WR) and 0.0503 (TE) per receiving yard.
-Passing first downs have no rate behind them and stay unscored.
+First downs are not published by any site, but the box score predicts them
+closely enough to estimate:
+
+| | Estimate |
+|---|---|
+| Passing first downs | 4.83% of passing yards |
+| Rushing first downs (RB/WR/TE) | 5.08% of rushing yards |
+| Receiving first downs | 4.50% (RB), 4.83% (WR), 5.03% (TE) of receiving yards |
+| Rushing first downs (QB) | a share of *carries*, not yards: 26.1% under 2 carries a game, 34.2% from 2 to 4, 37.8% above 4 |
+| Receiving first downs (QB) | zero |
+
+A quarterback's first downs are passing plus rushing. The carry-rate tiers
+matter: a quarterback running five times a game is being called for
+short-yardage runs that convert far more often than a scrambler's.
 
 What is genuinely unprojectable — how long a touchdown was, mostly — is
 **reported, not silently dropped**:
@@ -161,12 +171,32 @@ Expert consensus rankings come from FantasyPros' rankings pages, which are not
 capped, and ADP is pooled from RTSports, CBS, Yahoo, NFL, FantasyFootballCalculator,
 MyFantasyLeague and ESPN.
 
-## Caching
+## Output
 
-Scrapes are cached for an hour, rankings and ADP for eight hours, and Sleeper's
-player list for a day (they ask for no more than one call a day). `--refresh`
-ignores the cache, `--clear-cache` empties it, and `FFANALYTICS_CACHE_DIR` moves
-it (default `~/.cache/ffanalytics`).
+Every run writes a SQLite database (`--db`, default `ffanalytics.sqlite`; pass
+`-` to skip it):
+
+| Table | What's in it |
+|---|---|
+| `projections` | the ranked table, one row per player |
+| `source_projections` | what each site said, before they were combined |
+| `league` | league name, slots, scoring summary, replacement ranks |
+| `rosters` | who holds whom |
+| `unscored_settings` | scoring your league awards that nothing projects |
+| `run` | when it was written, from which sources |
+
+```bash
+sqlite3 draft.sqlite \
+  "select player, pos, round(points,1), round(points_vor,1)
+   from projections where rostered_by is null
+   order by points_vor desc limit 20"
+```
+
+The file holds the current picture, not a history — each run replaces what was
+there, so the database always reflects the latest scrape.
+
+Nothing is cached: every run fetches everything fresh from every site. That is
+deliberate but not free, so avoid running it in a tight loop.
 
 ## Layout
 
@@ -182,7 +212,7 @@ ffanalytics/
   ecr.py, adp.py   expert rankings and draft position
   players.py       the player universe and the id resolver
   stats.py         the numeric helpers behind the averages
-  cache.py         time-to-live cache on disk
+  db.py            write the run to SQLite
   data/            player id crosswalk and two fitted models
 ```
 
@@ -192,19 +222,6 @@ nesting rules for those bonuses, and the per-team model of how much a defense's
 points allowed swings week to week. The last two came from models fitted
 against play-by-play data in R and cannot be regenerated here, so they are
 carried as data. Nothing in this folder reads outside it.
-
-## Tests
-
-```bash
-python -m pytest tests -m "not network"   # fast, offline, deterministic
-python -m pytest tests -m network         # hits every site and the Sleeper API
-```
-
-The offline suite covers the scoring translation, the aggregation maths, the
-imputation rules and replacement-level allocation on fixtures. The network
-suite is what tells you a site has changed its markup: it scrapes each source
-in turn and asserts the rows come back identified, unduplicated and attached to
-real players, then runs the whole pipeline against a live league.
 
 ## Relationship to the R package
 
@@ -223,7 +240,6 @@ been corrected rather than carried:
   plain column mean;
 - estimated bonus columns are kept for every position, not only those with a
   nested threshold to roll up;
-- each source gets its own cache slot;
 - FFToday's player ids are read from the links they belong to, so a page's
   navigation link no longer shifts every id by one.
 

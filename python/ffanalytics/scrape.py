@@ -7,7 +7,6 @@ from typing import Iterable, Sequence
 
 import pandas as pd
 
-from . import cache
 from .season import current_season, current_week
 from .sources import DEFAULT_SOURCES, SOURCES
 
@@ -76,7 +75,6 @@ def scrape_data(
     positions: Sequence[str] = ("QB", "RB", "WR", "TE", "K", "DST"),
     season: int | None = None,
     week: int | None = None,
-    cache_ttl: float = cache.DEFAULT_TTL,
     **kwargs,
 ) -> Scrape:
     """Scrape projections and combine them into one frame per position.
@@ -84,9 +82,6 @@ def scrape_data(
     ``week=0`` means season-long ("draft") projections; any other week means
     that week.  A site that is down, blocked, or has not published yet is
     reported and skipped -- you get everything the rest of them had.
-
-    Results are cached per site for ``cache_ttl`` seconds; pass ``0`` to force
-    a fresh scrape.
     """
     season = current_season() if season is None else int(season)
     week = current_week() if week is None else int(week)
@@ -110,23 +105,16 @@ def scrape_data(
         if not supported:
             continue
 
-        key = f"scrape_{name.lower()}_{season}_{week}_{'-'.join(supported)}"
-        frames = cache.load(key, cache_ttl)
-        if frames is None:
-            print(f"\n{name}:")
-            try:
-                frames = source.scrape(
-                    positions=supported, season=season, week=week, **kwargs
-                )
-            except Exception as error:  # noqa: BLE001 - one dead site must not stop the rest
-                print(f"  ! {name} failed: {type(error).__name__}: {error}")
-                if source.note:
-                    print(f"    ({source.note})")
-                continue
-            if frames:
-                cache.save(key, frames)
-        else:
-            print(f"\n{name}: using cached scrape")
+        print(f"\n{name}:")
+        try:
+            frames = source.scrape(
+                positions=supported, season=season, week=week, **kwargs
+            )
+        except Exception as error:  # noqa: BLE001 - one dead site must not stop the rest
+            print(f"  ! {name} failed: {type(error).__name__}: {error}")
+            if source.note:
+                print(f"    ({source.note})")
+            continue
 
         if not frames:
             print(f"  {name} returned nothing")
