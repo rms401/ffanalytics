@@ -98,13 +98,15 @@ def test_defensive_settings_map_onto_team_defense_stats(translated):
 
 
 def test_settings_with_no_projectable_stat_are_reported_not_dropped(translated):
-    _, unscored = translated
-    assert unscored["bonus_fd_qb"] == 0.5
-    assert unscored["pass_td_50p"] == 2.0
-    assert unscored["pass_cmp_40p"] == 0.5
+    rules, unscored = translated
+    assert unscored["bonus_fd_qb"] == 0.5      # nobody projects first downs
+    assert unscored["pass_td_50p"] == 2.0      # nor how long a touchdown was
     # ...and nothing that *was* scored shows up here
     assert "pass_yd" not in unscored
     assert "bonus_rec_te" not in unscored
+    # a 40+ yard completion is projectable, so it is scored rather than reported
+    assert "pass_cmp_40p" not in unscored
+    assert rules.stats["pass_40_yds"] == 0.5
 
 
 def test_settings_worth_zero_points_are_not_reported_as_missing(translated):
@@ -140,3 +142,49 @@ def test_rostered_positions_expand_flex_slots():
 def test_every_starting_slot_maps_to_at_least_one_position():
     for slot, positions in STARTING_SLOTS.items():
         assert positions, slot
+
+
+def test_defensive_fumble_recovery_wins_over_the_special_teams_value():
+    """Sleeper prices these separately; the sources publish one DST figure.
+
+    A league paying 2 for a defensive recovery and 1 for a special-teams one
+    must score the defensive value, not whichever key happened to be read last.
+    """
+    rules, _ = scoring_rules_from_sleeper(
+        {"fum_rec": 2.0, "def_st_fum_rec": 1.0, "st_fum_rec": 1.0}
+    )
+    assert rules.stats["dst_fum_rec"] == 2.0
+
+
+def test_forced_fumbles_resolve_the_same_way():
+    rules, _ = scoring_rules_from_sleeper({"ff": 3.0, "st_ff": 1.0})
+    assert rules.stats["dst_fum_force"] == 3.0
+
+
+def test_special_teams_value_is_used_when_there_is_no_defensive_one():
+    rules, _ = scoring_rules_from_sleeper({"st_fum_rec": 1.5})
+    assert rules.stats["dst_fum_rec"] == 1.5
+
+
+def test_idp_tackle_aliases_do_not_fight_each_other():
+    rules, _ = scoring_rules_from_sleeper({"idp_tkl_solo": 1.0, "tkl_solo": 1.0})
+    assert rules.stats["idp_solo"] == 1.0
+
+
+def test_long_completion_bonus_is_scored_like_the_rushing_and_receiving_ones():
+    """pass_40_yds is projectable, so a 40+ yard completion bonus must count."""
+    rules, unprojectable = scoring_rules_from_sleeper(
+        {"pass_cmp_40p": 0.5, "rush_40p": 0.5, "rec_40p": 0.5}
+    )
+    assert rules.stats["pass_40_yds"] == 0.5
+    assert rules.stats["rush_40_yds"] == 0.5
+    assert rules.stats["rec_40_yds"] == 0.5
+    assert "pass_cmp_40p" not in unprojectable
+
+
+def test_touchdown_length_bonuses_remain_unprojectable():
+    """No source projects how long a touchdown was."""
+    _, unprojectable = scoring_rules_from_sleeper(
+        {"pass_td_50p": 2.0, "rush_td_40p": 1.0, "bonus_fd_wr": 0.5}
+    )
+    assert set(unprojectable) == {"pass_td_50p", "rush_td_40p", "bonus_fd_wr"}

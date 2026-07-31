@@ -276,6 +276,7 @@ _DIRECT = {
     "rush_40p": "rush_40_yds",
     "bonus_rush_yd_100": "rush_100_yds",
     "bonus_rush_yd_200": "rush_200_yds",
+    "pass_cmp_40p": "pass_40_yds",
     "rec": "rec",
     "rec_yd": "rec_yds",
     "rec_td": "rec_tds",
@@ -290,25 +291,30 @@ _DIRECT = {
     "int": "dst_int",
     "safe": "dst_safety",
     "blk_kick": "dst_blk",
-    "fum_rec": "dst_fum_rec",
-    "def_st_fum_rec": "dst_fum_rec",
-    "st_fum_rec": "dst_fum_rec",
-    "ff": "dst_fum_force",
-    "def_st_ff": "dst_fum_force",
-    "st_ff": "dst_fum_force",
     "pts_allow": "dst_pts_allowed",
-    "idp_tkl_solo": "idp_solo",
-    "tkl_solo": "idp_solo",
-    "idp_tkl_ast": "idp_asst",
-    "tkl_ast": "idp_asst",
     "idp_sack": "idp_sack",
     "idp_int": "idp_int",
     "idp_ff": "idp_fum_force",
     "idp_fum_rec": "idp_fum_rec",
-    "idp_pass_def": "idp_pd",
-    "pass_def": "idp_pd",
     "idp_def_td": "idp_td",
     "idp_safe": "idp_safety",
+}
+
+#: Stats several Sleeper settings can feed, in the order they should win.
+#:
+#: Sleeper splits some events by unit -- a fumble recovered by the defense is
+#: ``fum_rec``, one recovered on special teams is ``st_fum_rec`` -- while the
+#: projection sources publish a single figure for the whole DST unit.  Leagues
+#: often price those differently (this one pays 2 for a defensive recovery and
+#: 1 for a special-teams one), so the defensive setting is taken first, since
+#: that is where nearly all of a unit's recoveries come from.  The rest are
+#: aliases Sleeper uses interchangeably depending on league type.
+_FIRST_PRESENT: dict[str, tuple[str, ...]] = {
+    "dst_fum_rec": ("fum_rec", "def_st_fum_rec", "st_fum_rec"),
+    "dst_fum_force": ("ff", "def_st_ff", "st_ff"),
+    "idp_solo": ("idp_tkl_solo", "tkl_solo"),
+    "idp_asst": ("idp_tkl_ast", "tkl_ast"),
+    "idp_pd": ("idp_pass_def", "pass_def"),
 }
 
 #: Several settings feed one stat; the largest wins, since these are almost
@@ -355,7 +361,7 @@ _POINTS_ALLOWED = [
 _NO_PROJECTABLE_STAT = {
     "bonus_fd_qb", "bonus_fd_rb", "bonus_fd_wr", "bonus_fd_te",
     "pass_fd", "rush_fd", "rec_fd", "fd",
-    "pass_cmp_40p", "pass_td_40p", "pass_td_50p", "pass_int_td",
+    "pass_td_40p", "pass_td_50p", "pass_int_td",
     "rush_td_40p", "rush_td_50p", "rec_td_40p", "rec_td_50p",
     "rec_0_4", "rec_5_9", "rec_10_19", "rec_20_29", "rec_30_39",
     "fgm_60p", "fgm_yds", "fgm_yds_over_30", "fgmiss_60p",
@@ -395,6 +401,12 @@ def scoring_rules_from_sleeper(
             used.add(key)
             if value:
                 stats[stat] = value
+
+    for stat, keys in _FIRST_PRESENT.items():
+        present = [key for key in keys if key in settings]
+        used.update(present)
+        if present and settings[present[0]]:
+            stats[stat] = settings[present[0]]
 
     for stat, keys in _MAX_OF.items():
         values = [settings[key] for key in keys if key in settings]
