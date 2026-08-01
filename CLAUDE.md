@@ -82,7 +82,7 @@ Key invariants:
 
 FastAPI app (`server.py`) + one static vanilla-JS page (`static/`), no build
 step. `--serve` requires an existing `--db` from a full run. Two endpoints:
-`/api/state` (board+picks+slots+meta, polled every 5s by the page) and
+`/api/state` (board+picks+slots+meta, polled every second by the page) and
 `/api/player/{id}` (per-source stat lines). The board shows the `weighted`
 avg_type. FastAPI/uvicorn are optional deps (`[web]` extra) and are imported
 lazily — keep it that way so the core package imports without them. New static

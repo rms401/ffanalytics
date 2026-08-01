@@ -234,9 +234,9 @@ python -m ffanalytics --league <LEAGUE_ID> --db draft.sqlite --serve
 
 That opens a draft board at `http://127.0.0.1:8000` (change with `--port`)
 over the database a full run already wrote. A background loop runs
-`refresh_picks` every 5 seconds (`--poll` to change), and the page polls the
+`refresh_picks` every second (`--poll` to change), and the page polls the
 server, so drafted players gray out on the board moments after they are
-picked. The board is built for a full screen of its own on draft night:
+picked; the header shows the time of the last successful pick refresh. The board is built for a full screen of its own on draft night:
 
 - the ranked table (weighted averages) with position filters, a player
   search, tier breaks, and a hide-drafted toggle;
