@@ -29,6 +29,7 @@ python -m ffanalytics --user <sleeper_username>                # find a league i
 python -m ffanalytics --list-sources                           # what each site covers
 python -m ffanalytics --league <ID> --db draft.sqlite --refresh-picks  # fast draft-pick refresh (~1s)
 python -m ffanalytics --league <ID> --db draft.sqlite --serve  # draft-board web UI at 127.0.0.1:8000
+python -m ffanalytics --league <ID> --db draft.sqlite --serve --draft <DRAFT_ID>  # rehearse against a Sleeper mock room
 python -m compileall -q ffanalytics                            # syntax check
 ```
 

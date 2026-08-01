@@ -65,6 +65,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll", type=float, default=1.0, metavar="SECONDS",
                         help="how often --serve re-fetches the draft picks "
                              "(default: 1)")
+    parser.add_argument("--draft", metavar="DRAFT_ID",
+                        help="poll this Sleeper draft instead of the "
+                             "league's own -- point it at a mock-draft "
+                             "room's id (from its URL) to rehearse with "
+                             "your real board")
     parser.add_argument("--no-ecr", action="store_true",
                         help="skip the expert consensus rankings scrape")
     parser.add_argument("--no-adp", action="store_true",
@@ -159,7 +164,7 @@ def _refresh_picks(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
 
-    new_ids = refresh_picks(args.db, args.league)
+    new_ids = refresh_picks(args.db, args.league, draft_id=args.draft)
     if not new_ids:
         print("no new picks")
         return 0
@@ -206,7 +211,8 @@ def _serve(args: argparse.Namespace) -> int:
               "  pip install \"ffanalytics[web]\"", file=sys.stderr)
         return 2
 
-    serve(args.db, args.league, port=args.port, poll_seconds=args.poll)
+    serve(args.db, args.league, port=args.port, poll_seconds=args.poll,
+          draft_id=args.draft)
     return 0
 
 

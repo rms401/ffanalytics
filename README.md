@@ -249,6 +249,12 @@ picked; the header shows the time of the last successful pick refresh. The board
 Everything is read from the SQLite file on every poll — nothing is scraped —
 so the server is safe to leave running all night.
 
+To rehearse before draft night, start a mock draft on Sleeper, take the
+draft id from the mock room's URL (`sleeper.com/draft/nfl/<id>`) and add
+`--draft <id>`: the picks and order come from the mock room while the board,
+scoring and projections stay your league's. Rerunning without `--draft`
+snaps ownership back to the real league on the first refresh.
+
 ## Layout
 
 ```
