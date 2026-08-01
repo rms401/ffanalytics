@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..db import refresh_picks
-from ..sleeper import STARTING_SLOTS
+from ..sleeper import STARTING_SLOTS, _fetch_managers
 
 __all__ = ["create_app", "serve"]
 
@@ -176,6 +176,30 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
     db_path = Path(db_path)
     refresher = _RefreshLoop(db_path, league_id, poll_seconds)
 
+    # Before the first pick the ownership table is empty, but you still need
+    # to mark which team is yours -- so the league's member list is fetched
+    # from Sleeper once (and only once; a failure just leaves the dropdown
+    # to fill as picks arrive).
+    members: dict = {"tried": False, "rows": []}
+    members_lock = threading.Lock()
+
+    def league_members() -> list[dict]:
+        if not league_id:
+            return []
+        with members_lock:
+            if not members["tried"]:
+                members["tried"] = True
+                try:
+                    frame = _fetch_managers(str(league_id))
+                    members["rows"] = [
+                        {"team_name": row.get("team_name"),
+                         "manager": row.get("manager")}
+                        for row in frame.to_dict("records")
+                    ]
+                except Exception:  # noqa: BLE001 - optional nicety only
+                    pass
+        return members["rows"]
+
     app = FastAPI(title="ffanalytics draft board", docs_url=None,
                   redoc_url=None)
     app.state.refresher = refresher
@@ -193,12 +217,18 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
         with _connect(db_path) as connection:
             avg_type = _avg_type(connection)
             meta = _rows(connection, "SELECT * FROM meta LIMIT 1")
+            managers = _managers(connection)
+            seen = {row.get("manager") or row.get("team_name")
+                    for row in managers}
+            managers += [row for row in league_members()
+                         if (row.get("manager") or row.get("team_name"))
+                         not in seen]
             return {
                 "meta": meta[0] if meta else {},
                 "avg_type": avg_type,
                 "board": _board(connection, avg_type),
                 "picks": _picks(connection),
-                "managers": _managers(connection),
+                "managers": managers,
                 "slots": _rows(connection,
                                "SELECT kind, name, count FROM slots"),
                 "slot_positions": {slot: list(positions)

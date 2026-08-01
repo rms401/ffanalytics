@@ -410,7 +410,7 @@ def add_uncertainty(table: pd.DataFrame) -> pd.DataFrame:
         combined = np.divide(totals, present, out=np.full(totals.shape, np.nan),
                              where=present > 0)
         score = st.percentile(st.standardize(combined)).to_numpy(dtype=float)
-        merged.loc[index, "uncertainty"] = np.clip(np.round(score, 2), 0.01, 0.99)
+        merged.loc[index, "uncertainty"] = np.clip(np.round(100 * score), 1, 99)
 
     merged.attrs.update(table.attrs)
     return merged
