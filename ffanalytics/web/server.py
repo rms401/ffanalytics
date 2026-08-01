@@ -204,6 +204,14 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
                   redoc_url=None)
     app.state.refresher = refresher
 
+    # A local tool should never fight the browser cache: without this, a
+    # pulled app.js update only shows up after an Empty Caches dance.
+    @app.middleware("http")
+    async def _no_store(request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.on_event("startup")
     def _start_refresh() -> None:
         refresher.start()
