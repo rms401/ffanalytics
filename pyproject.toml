@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ffanalytics"
+version = "4.0.0"
+description = "Scrape fantasy football projections and score them for your Sleeper league"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "requests>=2.28",
+    "lxml>=4.9",
+    "cssselect>=1.2",
+    "openpyxl>=3.1",   # WalterFootball publishes a spreadsheet
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.100",
+    "uvicorn>=0.23",
+]
+
+[project.scripts]
+ffanalytics = "ffanalytics.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rms401/ffanalytics"
+Issues = "https://github.com/rms401/ffanalytics/issues"
+
+[tool.setuptools.packages.find]
+include = ["ffanalytics*"]
+
+[tool.setuptools.package-data]
+ffanalytics = ["data/*.csv", "data/*.json", "web/static/*"]
