@@ -28,7 +28,11 @@ let posFilter = "ALL";
 let seenPicks = null;        // sleeper_ids seen on the previous poll
 let flashPicks = new Set();  // picks to highlight this render
 let selectedId = null;       // player id open in the inspector
+let sortKey = "rank";        // column the board is ordered by
+let sortDir = 1;             // 1 ascending, -1 descending
 
+/* ``desc`` marks columns where the first click should put the biggest value
+   on top; rank-like and text columns start ascending. */
 const COLUMNS = [
   { key: "rank", label: "RK", digits: 0 },
   { key: "tier", label: "TIER", digits: 0 },
@@ -36,15 +40,15 @@ const COLUMNS = [
   { key: "player", label: "PLAYER", left: true, render: playerCell },
   { key: "team", label: "TEAM", left: true },
   { key: "pos_rank", label: "PRK", digits: 0 },
-  { key: "points", label: "PTS", digits: 1 },
-  { key: "points_vor", label: "VOR", digits: 1 },
-  { key: "floor", label: "FLOOR", digits: 1 },
-  { key: "ceiling", label: "CEIL", digits: 1 },
-  { key: "dropoff", label: "DROP", digits: 1 },
+  { key: "points", label: "PTS", digits: 1, desc: true },
+  { key: "points_vor", label: "VOR", digits: 1, desc: true },
+  { key: "floor", label: "FLOOR", digits: 1, desc: true },
+  { key: "ceiling", label: "CEIL", digits: 1, desc: true },
+  { key: "dropoff", label: "DROP", digits: 1, desc: true },
   { key: "uncertainty", label: "UNC", digits: 0 },
   { key: "pos_ecr", label: "ECR", digits: 0 },
   { key: "adp", label: "ADP", digits: 1 },
-  { key: "adp_diff", label: "ADP±", digits: 0, signed: true },
+  { key: "adp_diff", label: "ADP±", digits: 0, signed: true, desc: true },
   { key: "drafted_by", label: "DRAFTED", left: true, render: draftedCell },
 ];
 
@@ -124,10 +128,37 @@ function visibleColumns() {
   return COLUMNS.filter(c => present.has(c.key));
 }
 
+function compareRows(a, b) {
+  const av = a[sortKey], bv = b[sortKey];
+  const aMissing = av == null || av === "" ||
+    (typeof av === "number" && Number.isNaN(av));
+  const bMissing = bv == null || bv === "" ||
+    (typeof bv === "number" && Number.isNaN(bv));
+  if (aMissing || bMissing) return aMissing - bMissing; // blanks sink either way
+  const cmp = typeof av === "string" || typeof bv === "string"
+    ? String(av).localeCompare(String(bv))
+    : av - bv;
+  return cmp * sortDir || (a.rank ?? 0) - (b.rank ?? 0);
+}
+
 function renderHead(columns) {
   ui.head.textContent = "";
   for (const column of columns) {
-    const th = el("th", column.left ? "left" : "", column.label);
+    const active = column.key === sortKey;
+    const th = el("th", column.left ? "left" : "",
+      active ? `${column.label} ${sortDir === 1 ? "▴" : "▾"}`
+             : column.label);
+    th.classList.add("sortable");
+    if (active) th.classList.add("sorted");
+    th.addEventListener("click", () => {
+      if (sortKey === column.key) {
+        sortDir = -sortDir;
+      } else {
+        sortKey = column.key;
+        sortDir = column.desc ? -1 : 1;
+      }
+      renderBoard();
+    });
     ui.head.appendChild(th);
   }
 }
@@ -144,13 +175,17 @@ function renderBoard() {
   let lastTier = null;
   let shown = 0;
 
-  for (const row of state.board) {
+  // Tier breaks only mean something in the default rank order.
+  const rankOrder = sortKey === "rank" && sortDir === 1;
+  const rows = rankOrder ? state.board : state.board.slice().sort(compareRows);
+
+  for (const row of rows) {
     if (posFilter !== "ALL" && row.pos !== posFilter) continue;
     if (query && !(row.player || "").toLowerCase().includes(query)) continue;
     const drafted = row.drafted_by != null || row.draft_pick != null;
     if (hideDrafted && drafted) continue;
 
-    if (posFilter !== "ALL" && row.tier != null && row.tier !== lastTier) {
+    if (rankOrder && posFilter !== "ALL" && row.tier != null && row.tier !== lastTier) {
       const breakRow = el("tr", "tier-break");
       const cell = el("td", "", `Tier ${row.tier}`);
       cell.colSpan = columns.length;

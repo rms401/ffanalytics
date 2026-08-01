@@ -125,6 +125,10 @@ body {
 }
 #board th.left, #board td.left { text-align: left; }
 
+#board th.sortable { cursor: pointer; user-select: none; }
+#board th.sortable:hover { color: var(--ink-2); }
+#board th.sorted { color: var(--ink); }
+
 #board td {
   border-bottom: 1px solid var(--hairline);
   font-variant-numeric: tabular-nums;
