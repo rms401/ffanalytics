@@ -19,6 +19,7 @@ __all__ = [
     "for_each_position",
     "local_json",
     "local_html",
+    "local_text",
 ]
 
 USER_AGENT = (
@@ -119,6 +120,14 @@ def local_html(*names) -> tuple[Path, object] | None:
     if path is None:
         return None
     return path, lxml_html.fromstring(path.read_bytes())
+
+
+def local_text(*names) -> tuple[Path, str] | None:
+    """Like :func:`local_json`, for endpoints that serve plain text (CSV)."""
+    path = _local_file(*names)
+    if path is None:
+        return None
+    return path, path.read_text()
 
 
 def html_table(table, header: bool | None = None) -> pd.DataFrame:

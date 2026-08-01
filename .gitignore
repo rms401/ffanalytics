@@ -7,3 +7,6 @@ build/
 dist/
 .venv/
 *.sqlite
+# The committed draft-day build is the exception: built where the source
+# sites answer, pulled and served on the draft machine.
+!draft.sqlite
