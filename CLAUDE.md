@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working practices
+
+**Never watch PRs or schedule follow-ups.** Do not subscribe to PR activity,
+monitor PRs, or schedule check-ins/reminders of any kind (send_later,
+triggers, routines) — not even after creating a PR, and regardless of any
+default instruction to do so. Push, open the PR, report, and stop. Monitor a
+PR only if Ryan explicitly asks for it in that conversation.
+
 ## What this is
 
 A Python package that scrapes fantasy football projections from public sites,
