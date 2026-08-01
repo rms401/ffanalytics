@@ -261,13 +261,18 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
     return written
 
 
-def refresh_picks(path: str | Path, league_id: str | int) -> set[str]:
+def refresh_picks(path: str | Path, league_id: str | int,
+                  with_draft: bool = True) -> set[str]:
     """Re-fetch the draft into an existing database -- the fast loop.
 
     Rewrites only ``ownership``, the ``draft`` order table, and the meta
     row's ``written_at``; the projections are untouched.  Returns the
     sleeper_ids newly held since the previous refresh -- empty (but still
     stamped) before the draft starts.
+
+    ``with_draft=False`` skips the draft-order table, which changes rarely --
+    the serve loop passes it on most iterations so the order is polled on a
+    slower cadence than the picks.
     """
     path = Path(path)
     if not path.exists():
@@ -296,7 +301,8 @@ def refresh_picks(path: str | Path, league_id: str | int) -> set[str]:
             connection.execute(
                 "CREATE INDEX ownership_sleeper ON ownership (sleeper_id)"
             )
-        _replace(connection, "draft", _draft_table(league))
+        if with_draft:
+            _replace(connection, "draft", _draft_table(league))
         connection.execute("UPDATE meta SET written_at = ?", (_now(),))
 
     return set(ownership["sleeper_id"].dropna().astype(str)) - before
