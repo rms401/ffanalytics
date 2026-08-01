@@ -37,7 +37,8 @@ __all__ = [
 
 AVERAGE_TYPES = ("average", "robust", "weighted")
 
-#: Positional rank treated as freely available, for value over replacement.
+#: Positional rank of the last starter; the first player ranked past it is
+#: treated as freely available, for value over replacement.
 #: :func:`ffanalytics.league.replacement_ranks` derives better ones from a
 #: real league's roster settings; these are the fallback.
 REPLACEMENT_RANKS = {
@@ -219,8 +220,12 @@ def _rank_and_tier(summary: pd.DataFrame, tier_threshold: float) -> pd.DataFrame
     summary = summary.sort_values("points", ascending=False).reset_index(drop=True)
     summary["pos_rank"] = st.dense_rank(-summary["points"]).astype("Int64")
 
-    # How many points this player is worth over the next one down.
-    summary["dropoff"] = (summary["points"] - summary["points"].shift(-1)).fillna(0.0)
+    # How many points this player is worth over the next two down -- the
+    # position's cliff indicator.  Averaging two smooths one site's quirky
+    # neighbor; the last player gets 0, the second-to-last his single gap.
+    next_two = pd.concat([summary["points"].shift(-1),
+                          summary["points"].shift(-2)], axis=1).mean(axis=1)
+    summary["dropoff"] = (summary["points"] - next_two).fillna(0.0)
 
     typical_spread = float(np.nanmedian(summary["sd_pts"])) if len(summary) else np.nan
     step = typical_spread * tier_threshold
@@ -235,7 +240,7 @@ def _rank_and_tier(summary: pd.DataFrame, tier_threshold: float) -> pd.DataFrame
 
 def _value_over_replacement(table: pd.DataFrame,
                             replacement_ranks: Mapping[str, int]) -> pd.DataFrame:
-    """Points above the last starter at each position, and the overall ranks."""
+    """Points above the best non-starter at each position, and the overall ranks."""
     pieces = []
     for (_, position), group in table.groupby(["avg_type", "pos"], sort=False):
         group = group.copy()
@@ -261,15 +266,18 @@ def _value_over_replacement(table: pd.DataFrame,
 
 
 def _replacement_value(values: pd.Series, ranks: pd.Series, baseline: int) -> float:
-    """The points of the player at the replacement rank.
+    """The points of the first player ranked past the replacement rank.
 
-    When a position has fewer players than the baseline -- a short scrape, or a
-    deep league -- the worst projected player is the best available stand-in.
+    Replacement level is the best player who is *not* startable -- rank
+    ``baseline + 1`` under dense ranks -- so every starter carries positive
+    value.  When nobody ranks past the baseline -- a short scrape, or a deep
+    league -- the worst projected player is the best available stand-in.
     """
-    matches = np.flatnonzero(np.asarray(ranks == baseline))
-    if matches.size:
-        return float(values.iloc[matches[0]])
-    order = np.argsort(np.asarray(ranks, dtype=float))
+    array = np.asarray(ranks, dtype=float)
+    beyond = np.flatnonzero(array > baseline)
+    if beyond.size:
+        return float(values.iloc[beyond[np.argmin(array[beyond])]])
+    order = np.argsort(array)
     return float(values.iloc[order[-1]]) if len(values) else 0.0
 
 

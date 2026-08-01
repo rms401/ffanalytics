@@ -268,7 +268,7 @@ tr.drafted .pos-badge { opacity: 0.45; }
   min-height: 96px;
 }
 
-#roster, #ticker {
+#roster, #ticker, #advisor {
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 6px;
@@ -276,7 +276,44 @@ tr.drafted .pos-badge { opacity: 0.45; }
   overflow: auto;
 }
 #roster { flex: 3; }
+#advisor { flex: 3; max-height: 240px; }
 #ticker { flex: 2; }
+
+#advisor-head {
+  color: var(--ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+#advisor-rec { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+#advisor-rec .rec-player { font-size: 15px; font-weight: 700; }
+#advisor-rec .rec-why { color: var(--ink-muted); font-size: 12px; }
+#advisor-cols { display: flex; gap: 14px; }
+#advisor-cols > div { flex: 1; min-width: 0; }
+#advisor table { border-collapse: collapse; width: 100%; }
+#advisor th, #advisor td {
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11px;
+  padding: 2px 6px 2px 0;
+  text-align: right;
+  white-space: nowrap;
+}
+#advisor th {
+  color: var(--ink-muted);
+  font-weight: 600;
+  text-align: right;
+  text-transform: uppercase;
+}
+#advisor th.left, #advisor td.left { text-align: left; }
+#advisor td.bench { color: var(--ink-muted); }
+#advisor .col-title {
+  color: var(--ink-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
 
 #roster-head { align-items: center; display: flex; gap: 8px; margin-bottom: 7px; }
 #roster-head label {

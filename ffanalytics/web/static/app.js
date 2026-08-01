@@ -21,6 +21,8 @@ const ui = {
   me: document.getElementById("me"),
   rosterSlots: document.getElementById("roster-slots"),
   tickerList: document.getElementById("ticker-list"),
+  advisorStatus: document.getElementById("advisor-status"),
+  advisorBody: document.getElementById("advisor-body"),
 };
 
 let state = null;            // last /api/state payload
@@ -416,6 +418,99 @@ async function openInspector(row) {
   }
 }
 
+/* ---- advisor ---------------------------------------------------------- */
+
+async function renderAdvisor() {
+  const mine = ui.me.value;
+  if (!mine) {
+    ui.advisorStatus.textContent = "";
+    ui.advisorBody.className = "dim";
+    ui.advisorBody.textContent = "pick your team to see the plan";
+    return;
+  }
+
+  let rec;
+  try {
+    const response = await fetch(`/api/recommend?me=${encodeURIComponent(mine)}`);
+    if (!response.ok) throw new Error(`${response.status}`);
+    rec = await response.json();
+  } catch (error) {
+    ui.advisorStatus.textContent = "";
+    ui.advisorBody.className = "dim";
+    ui.advisorBody.textContent = `advisor unreachable: ${error.message}`;
+    return;
+  }
+
+  if (!rec.available) {
+    ui.advisorStatus.textContent = "";
+    ui.advisorBody.className = "dim";
+    ui.advisorBody.textContent = rec.reason || "unavailable";
+    return;
+  }
+
+  ui.advisorStatus.textContent =
+    `pick ${rec.current_label}${rec.i_am_on_clock ? " — YOU" : ""}` +
+    ` · yours: ${rec.my_next_label} · slot ${rec.my_slot}`;
+
+  const body = ui.advisorBody;
+  body.className = "";
+  body.textContent = "";
+
+  const recLine = el("div", "");
+  recLine.id = "advisor-rec";
+  recLine.appendChild(el("span", `pos-badge pos-${rec.recommendation.pos}`,
+    rec.recommendation.pos));
+  recLine.appendChild(el("span", "rec-player", rec.recommendation.player));
+  const why = [`plan ${fmt(rec.recommendation.plan_total, 1)}`];
+  if (rec.recommendation.cost_of_next_best != null) {
+    why.push(`next best −${fmt(rec.recommendation.cost_of_next_best, 1)}`);
+  }
+  if (rec.stage === "bench") why.push("bench pick");
+  recLine.appendChild(el("span", "rec-why", why.join(" · ")));
+  body.appendChild(recLine);
+
+  const cols = el("div", "");
+  cols.id = "advisor-cols";
+
+  const planCol = el("div", "");
+  planCol.appendChild(el("div", "col-title", "the plan"));
+  const planTable = document.createElement("table");
+  for (const step of rec.plan) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "left" + (step.starter ? "" : " bench"), step.label));
+    tr.appendChild(el("td", "left" + (step.starter ? "" : " bench"), step.pos));
+    tr.appendChild(el("td", "left" + (step.starter ? "" : " bench"),
+      step.player + (step.starter ? "" : " (bn)")));
+    tr.appendChild(el("td", step.starter ? "" : "bench", fmt(step.points, 1)));
+    planTable.appendChild(tr);
+  }
+  planCol.appendChild(planTable);
+  cols.appendChild(planCol);
+
+  const posCol = el("div", "");
+  posCol.appendChild(el("div", "col-title", "cost of waiting"));
+  const posTable = document.createElement("table");
+  const head = document.createElement("tr");
+  for (const label of ["pos", "best now", "vor", "cost", "drop"]) {
+    head.appendChild(el("th", label === "pos" || label === "best now" ? "left" : "", label));
+  }
+  posTable.appendChild(head);
+  for (const row of rec.positions) {
+    if (!row.startable) continue;
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "left", row.pos));
+    tr.appendChild(el("td", "left", row.best_now.player));
+    tr.appendChild(el("td", "", fmt(row.best_now.points_vor, 1)));
+    tr.appendChild(el("td", "", row.waiting_cost == null ? "" : fmt(row.waiting_cost, 1)));
+    tr.appendChild(el("td", "", row.dropoff == null ? "" : fmt(row.dropoff, 1)));
+    posTable.appendChild(tr);
+  }
+  posCol.appendChild(posTable);
+  cols.appendChild(posCol);
+
+  body.appendChild(cols);
+}
+
 /* ---- header / freshness ----------------------------------------------- */
 
 function renderHeader() {
@@ -484,6 +579,7 @@ async function poll() {
   renderTicker();
   renderRoster();
   renderFreshness();
+  renderAdvisor();
 }
 
 ui.search.addEventListener("input", renderBoard);
@@ -492,6 +588,7 @@ ui.me.addEventListener("change", () => {
   localStorage.setItem(storageKey(), ui.me.value);
   renderBoard();
   renderRoster();
+  renderAdvisor();
 });
 ui.inspectorClose.addEventListener("click", () => {
   ui.inspector.hidden = true;
