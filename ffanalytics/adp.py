@@ -17,7 +17,7 @@ import pandas as pd
 
 from .players import TEAM_CORRECTIONS, resolve_ids
 from .season import current_season
-from .sources._http import Session, html_table, polite_pause
+from .sources._http import Session, html_table, local_json, polite_pause
 from .sources.columns import ESPN_TEAM_ABBREVIATIONS
 
 __all__ = ["get_adp", "ADP_SOURCES", "AAV_SOURCES"]
@@ -29,9 +29,15 @@ AAV_SOURCES = ("RTS", "Yahoo", "MFL", "ESPN")
 
 def rts_draft(metric: str = "adp") -> pd.DataFrame:
     """RTSports."""
-    url = ("https://www.freedraftguide.com/football/adp-aav-provider.php"
-           "?NUM=&STYLE=0&AAV=" + ("YES" if metric == "aav" else ""))
-    payload = Session().json(url)
+    saved = local_json("aav") if metric == "aav" else \
+        local_json("adp", "adp-aav-provider")
+    if saved is not None:
+        path, payload = saved
+        print(f"  RTS {metric.upper()}: {path} (local copy)")
+    else:
+        url = ("https://www.freedraftguide.com/football/adp-aav-provider.php"
+               "?NUM=&STYLE=0&AAV=" + ("YES" if metric == "aav" else ""))
+        payload = Session().json(url)
     players = payload["player_list"]
     frame = pd.DataFrame(
         list(players.values()) if isinstance(players, dict) else players

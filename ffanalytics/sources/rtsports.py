@@ -6,7 +6,7 @@ import pandas as pd
 
 from ..players import resolve_ids
 from ..stats import to_numeric_frame
-from ._http import Session, for_each_position, polite_pause
+from ._http import Session, for_each_position, local_json, polite_pause
 from .columns import RTSPORTS, RTSPORTS_POSITION_IDS, rename
 
 __all__ = ["scrape_rtsports"]
@@ -39,10 +39,18 @@ def scrape_rtsports(positions=POSITIONS, season=None, week=0, **_) -> dict[str, 
     session = Session()
 
     def scrape_one(position: str) -> pd.DataFrame:
-        url = f"{_URL}?POS={RTSPORTS_POSITION_IDS[position]}"
-        print(f"  RTSports {position}: {url}")
-        payload = session.json(url)
-        polite_pause(_PAUSE)
+        saved = local_json(position.lower(),
+                           f"rtsports-{position.lower()}",
+                           f"fdg_{position.lower()}",
+                           f"pos={RTSPORTS_POSITION_IDS[position]}")
+        if saved is not None:
+            path, payload = saved
+            print(f"  RTSports {position}: {path} (local copy)")
+        else:
+            url = f"{_URL}?POS={RTSPORTS_POSITION_IDS[position]}"
+            print(f"  RTSports {position}: {url}")
+            payload = session.json(url)
+            polite_pause(_PAUSE)
 
         info, stats = [], []
         for player in _players(payload):
