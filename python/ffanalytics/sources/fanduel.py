@@ -108,8 +108,10 @@ def scrape_fanduel(positions=POSITIONS, season=None, week=0,
         ).to_numpy()
 
         if "completionsAttempts" in frame.columns:
-            split = frame.pop("completionsAttempts").astype(str).str.split("/", n=1,
-                                                                          expand=True)
+            # A value without the slash leaves the split a column short;
+            # reindex keeps NaN there rather than raising.
+            split = (frame.pop("completionsAttempts").astype(str)
+                     .str.split("/", n=1, expand=True).reindex(columns=[0, 1]))
             frame["pass_comp"] = pd.to_numeric(split[0], errors="coerce")
             frame["pass_att"] = pd.to_numeric(split[1], errors="coerce")
 

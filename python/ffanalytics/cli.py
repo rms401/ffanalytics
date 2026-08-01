@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
+from pathlib import Path
 
 import pandas as pd
 
 from .adp import ADP_SOURCES
-from .db import write_sqlite
+from .db import refresh_picks, write_sqlite
 from .league import build_league_projections
 from .scrape import POSITIONS
 from .sleeper import leagues_for_user
@@ -38,9 +40,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--positions", nargs="+", metavar="POS",
                         help=f"positions to project (default: what the league "
                              f"starts; any of {', '.join(POSITIONS)})")
-    parser.add_argument("--avg-type", choices=("average", "robust", "weighted"),
-                        default="average",
-                        help="how to combine the sources (default: average)")
+    parser.add_argument("--avg-type",
+                        choices=("all", "average", "robust", "weighted"),
+                        default="all",
+                        help="how to combine the sources (default: all three, "
+                             "stored side by side; the display shows weighted)")
     parser.add_argument("--top", type=int, default=30,
                         help="how many players to print (default: 30)")
     parser.add_argument("--db", "-d", metavar="PATH", default="ffanalytics.sqlite",
@@ -48,6 +52,10 @@ def _parser() -> argparse.ArgumentParser:
                              "(default: ffanalytics.sqlite; '-' to skip)")
     parser.add_argument("--available-only", action="store_true",
                         help="print only players nobody in the league has rostered")
+    parser.add_argument("--refresh-picks", action="store_true",
+                        help="skip scraping; re-fetch the draft into an "
+                             "existing --db and print who was picked since "
+                             "the last refresh")
     parser.add_argument("--no-ecr", action="store_true",
                         help="skip the expert consensus rankings scrape")
     parser.add_argument("--no-adp", action="store_true",
@@ -93,6 +101,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\nGive me a league: --league <LEAGUE_ID>, or --user <NAME> to find it.")
         return 2
 
+    if args.refresh_picks:
+        return _refresh_picks(args)
+
     result = build_league_projections(
         args.league,
         week=args.week,
@@ -107,16 +118,60 @@ def main(argv: list[str] | None = None) -> int:
     print("\n" + result.report())
 
     table = result.available if args.available_only else result.table
-    print(f"\nTop {args.top} by points over replacement:")
+    label = ""
+    if args.avg_type == "all" and "avg_type" in table.columns:
+        table = table[table["avg_type"] == "weighted"]
+        label = " (weighted)"
+    print(f"\nTop {args.top} by points over replacement{label}:")
     with pd.option_context("display.width", 220, "display.max_columns", 40):
         print(table.head(args.top).pipe(_printable).to_string(index=False))
 
     if args.db and args.db != "-":
-        written = write_sqlite(result, args.db, avg_type=args.avg_type)
+        written = write_sqlite(result, args.db)
         summary = ", ".join(
             f"{count} {table}" for table, count in written.items() if count
         )
         print(f"\nWrote {summary} to {args.db}")
+    return 0
+
+
+def _refresh_picks(args: argparse.Namespace) -> int:
+    """The fast loop: pull the latest picks into an existing database."""
+    if not args.db or args.db == "-":
+        print("--refresh-picks needs --db pointing at an existing file",
+              file=sys.stderr)
+        return 2
+    if not Path(args.db).exists():
+        print(f"No database at {args.db} -- run a full scrape first:\n"
+              f"  python -m ffanalytics --league {args.league} --db {args.db}",
+              file=sys.stderr)
+        return 2
+
+    new_ids = refresh_picks(args.db, args.league)
+    if not new_ids:
+        print("no new picks")
+        return 0
+
+    marks = ",".join("?" * len(new_ids))
+    with sqlite3.connect(args.db) as connection:
+        rows = connection.execute(
+            f"SELECT sleeper_id, player, manager, draft_round, draft_pick "
+            f"FROM ownership WHERE sleeper_id IN ({marks}) ORDER BY draft_pick",
+            sorted(new_ids),
+        ).fetchall()
+
+    print(f"{len(new_ids)} new pick(s):")
+    seen = set()
+    for sleeper_id, player, manager, draft_round, draft_pick in rows:
+        seen.add(sleeper_id)
+        parts = [player or sleeper_id]
+        if draft_round is not None and draft_pick is not None:
+            parts.append(f"(round {draft_round}, pick {draft_pick})")
+        if manager:
+            parts.append(f"-- {manager}")
+        print("  " + " ".join(parts))
+    for sleeper_id in sorted(new_ids - seen):
+        print(f"  {sleeper_id}")
     return 0
 
 

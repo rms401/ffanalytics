@@ -27,13 +27,14 @@ People's Republic of Collusion (2026) -- 12 teams
   starting slots: QB, RB, RB, WR, WR, TE, FLEX, SUPER_FLEX, K
   bench: 6
   scoring: 1 PPR, TE premium (2.5), 3 pt pass TD, 0.05/pass yd, superflex
-  replacement level: K12, QB24, RB24, TE20, WR28
+  replacement level: K12, QB24, RB24, TE21, WR27
   sources used: CBS, ESPN, FFToday, RTSports, WalterFootball
 
+Top of the board (weighted):
  rank pos  pos_rank  tier              player team  points  points_vor  floor  ceiling  dropoff   adp
-    1  TE         1     1        Trey McBride  ARI   455.6       193.6  432.1    479.8     30.9  29.7
-    2  RB         1     1      Bijan Robinson  ATL   429.9       187.1  404.3    454.4      2.4   2.5
-    3  RB         2     1        Jahmyr Gibbs  DET   427.5       184.7  417.7    439.4     48.7   2.5
+    1  TE         1     1        Trey McBride  ARI   454.6       212.8  433.4    480.0     25.2  29.7
+    2  RB         1     1      Bijan Robinson  ATL   435.8       198.7  407.1    460.6      4.3   2.5
+    3  RB         2     1        Jahmyr Gibbs  DET   431.4       194.4  416.9    451.1     61.3   2.5
     ...
 ```
 
@@ -64,7 +65,11 @@ closely enough to estimate:
 
 A quarterback's first downs are passing plus rushing. The carry-rate tiers
 matter: a quarterback running five times a game is being called for
-short-yardage runs that convert far more often than a scrambler's.
+short-yardage runs that convert far more often than a scrambler's. Carries per
+game divide by a snap-share games estimate (`data/qb_games.csv`, derived from
+Razzball snap projections and refreshed by hand), clamped to at least one game
+so a fourth-stringer's half-carry cannot read as a rate; quarterbacks not in
+the sheet divide by 17.
 
 What is genuinely unprojectable — how long a touchdown was, mostly — is
 **reported, not silently dropped**:
@@ -147,7 +152,15 @@ rules = ScoringRules(
 
 `--avg-type` picks how the sources are combined: `average` (the plain mean),
 `robust` (resists one site being far out on its own), or `weighted` (uses each
-site's published accuracy weight).
+site's published accuracy weight). The default, `all`, computes every one --
+the table carries an `avg_type` column, the display shows the weighted rows,
+and the SQLite file keeps all three.
+
+A stat a source did not publish is treated as missing, never as zero: it is
+filled from the player's other sources, then from position-wide rates, then
+from the median of similarly-projected players at the position. A published
+zero is a zero. Players a site lists without projecting anything are dropped
+rather than imputed into existence.
 
 ## Sources
 
@@ -157,7 +170,7 @@ site's published accuracy weight).
 | ESPN | yes | yes | IDP needs `espn_league_id=` |
 | FFToday | yes | yes | |
 | FanDuel | yes | yes | formerly NumberFire; nothing published out of season |
-| FantasySharks | yes | yes | blocks datacenter IPs, so often empty from a server |
+| FantasySharks | yes | yes | Cloudflare browser challenge, so usually empty from a server; may work from a home IP |
 | NFL | yes | yes | publishes late in the off-season |
 | RTSports | yes | — | |
 | WalterFootball | yes | — | one spreadsheet a year |
@@ -178,25 +191,36 @@ Every run writes a SQLite database (`--db`, default `ffanalytics.sqlite`; pass
 
 | Table | What's in it |
 |---|---|
-| `projections` | the ranked table, one row per player |
+| `projections` | the ranked table, one row per player per `avg_type` |
 | `source_projections` | what each site said, before they were combined |
-| `league` | league name, slots, scoring summary, replacement ranks |
-| `rosters` | who holds whom |
-| `unscored_settings` | scoring your league awards that nothing projects |
-| `run` | when it was written, from which sources |
+| `scoring` | one row per (position, stat, points); `projected = 0` marks settings your league awards that nothing projects |
+| `slots` | starting slots and replacement ranks, one row each |
+| `ownership` | who holds whom -- draft picks during a draft, rosters after |
+| `players` | the Sleeper player crosswalk, with when it was fetched |
+| `meta` | league facts and `written_at`, the completion time of the last pick refresh |
 
 ```bash
 sqlite3 draft.sqlite \
   "select player, pos, round(points,1), round(points_vor,1)
-   from projections where rostered_by is null
+   from projections where avg_type = 'weighted' and rostered_by is null
    order by points_vor desc limit 20"
 ```
 
 The file holds the current picture, not a history — each run replaces what was
 there, so the database always reflects the latest scrape.
 
-Nothing is cached: every run fetches everything fresh from every site. That is
-deliberate but not free, so avoid running it in a tight loop.
+On draft night, refresh who's taken without re-scraping anything:
+
+```bash
+python -m ffanalytics --league <LEAGUE_ID> --db draft.sqlite --refresh-picks
+```
+
+That rewrites only `ownership` and the `meta.written_at` stamp — about a second
+— so it can sit in a loop between picks while the projections stay put.
+
+Nothing else is cached: a full run fetches everything fresh from every site.
+That is deliberate but not free, so keep the full run out of tight loops and
+let `--refresh-picks` do the draft-day work.
 
 ## Layout
 

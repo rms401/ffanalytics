@@ -122,7 +122,9 @@ def scrape_data(
 
         for position, frame in frames.items():
             if frame is not None and len(frame):
-                combined.setdefault(position, []).append(_drop_empty_columns(frame))
+                frame = _drop_empty_rows(_drop_empty_columns(frame))
+                if len(frame):
+                    combined.setdefault(position, []).append(frame)
 
     stacked = {
         position: _one_row_per_source(pd.concat(frames, ignore_index=True))
@@ -147,6 +149,25 @@ def _one_row_per_source(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _drop_empty_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[[column for column in frame.columns if frame[column].notna().any()]]
+
+
+#: Columns that identify a row rather than project anything.
+_IDENTITY_COLUMNS = frozenset(
+    {"id", "src_id", "player", "pos", "team", "data_src", "bye"}
+)
+
+
+def _drop_empty_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Drop players a source listed but did not actually project.
+
+    A row whose every stat is missing is not a projection with gaps -- it is
+    the site's player index leaking through -- and imputing it would
+    manufacture a phantom projection out of nothing but medians.
+    """
+    stats = [c for c in frame.columns if c not in _IDENTITY_COLUMNS]
+    if not stats:
+        return frame
+    return frame[frame[stats].notna().any(axis=1)]
 
 
 def _match(values, choices: Iterable[str], what: str) -> list[str]:

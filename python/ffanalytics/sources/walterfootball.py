@@ -61,10 +61,14 @@ def scrape_walterfootball(positions=POSITIONS, season=None, week=0,
             has_rush = "rush_yds" in frame.columns
             has_rec = "rec_yds" in frame.columns
             if has_rush and has_rec:
-                total = frame["rush_yds"].fillna(0) + frame["rec_yds"].fillna(0)
-                share = (frame["rush_yds"] / total).where(total != 0, 0)
-                frame["rush_tds"] = share * frame["reg_tds"]
-                frame["rec_tds"] = (1 - share) * frame["reg_tds"]
+                rush = frame["rush_yds"].fillna(0)
+                total = rush + frame["rec_yds"].fillna(0)
+                share = (rush / total).where(total != 0, 0)
+                # No yardage figure on either side leaves the touchdowns
+                # unattributable; those rows stay NaN.
+                known = frame[["rush_yds", "rec_yds"]].notna().any(axis=1)
+                frame["rush_tds"] = (share * frame["reg_tds"]).where(known)
+                frame["rec_tds"] = ((1 - share) * frame["reg_tds"]).where(known)
                 frame = frame.drop(columns="reg_tds")
             elif has_rush or has_rec:
                 target = "rush_tds" if has_rush else "rec_tds"

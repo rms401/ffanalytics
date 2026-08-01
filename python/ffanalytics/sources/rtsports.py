@@ -59,19 +59,19 @@ def scrape_rtsports(positions=POSITIONS, season=None, week=0, **_) -> dict[str, 
 
         stat_frame = pd.DataFrame(stats)
         # The stats block repeats name and team as empty strings; dropping the
-        # columns that never vary removes them before they clobber the real ones.
-        constant = [c for c in stat_frame.columns if stat_frame[c].nunique(dropna=True) <= 1]
+        # text columns that never vary removes them before they clobber the
+        # real ones.  A uniform numeric column is a legitimate stat and stays.
+        constant = [
+            c for c in stat_frame.columns
+            if stat_frame[c].nunique(dropna=True) <= 1
+            and pd.to_numeric(stat_frame[c], errors="coerce").isna().all()
+        ]
         stat_frame = stat_frame.drop(columns=constant)
 
         frame = pd.concat(
             [pd.DataFrame(info).reset_index(drop=True), stat_frame.reset_index(drop=True)],
             axis=1,
         )
-        if (position in ("RB", "WR", "TE")
-                and "pass_yds" in frame.columns
-                and "pass_atts" not in frame.columns):
-            frame["pass_atts"] = 0
-
         frame.columns = rename(frame.columns, RTSPORTS)
         frame = to_numeric_frame(frame, exclude=("src_id", "stats_id"))
 

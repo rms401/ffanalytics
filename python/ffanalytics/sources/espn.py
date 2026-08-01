@@ -91,7 +91,7 @@ def scrape_espn(positions=POSITIONS, season=None, week=0, espn_league_id=None,
             if not stats:  # a bye week comes back with no stat block
                 continue
             row = {
-                stat_names[key]: round(value)
+                stat_names[key]: value
                 for key, value in (stats[0].get("stats") or {}).items()
                 if key in stat_names
             }

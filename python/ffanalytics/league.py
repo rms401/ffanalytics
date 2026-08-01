@@ -18,6 +18,7 @@ the projections themselves:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -33,7 +34,7 @@ from .projections import (
 )
 from .scrape import Scrape, scrape_data
 from .scoring import ScoringRules
-from .sleeper import STARTING_SLOTS, SleeperLeague, draft_picks, fetch_league, \
+from .sleeper import STARTING_SLOTS, SleeperLeague, fetch_league, \
     sleeper_player_map
 from .sources import DEFAULT_SOURCES
 
@@ -55,6 +56,8 @@ class LeagueProjections:
     replacement_ranks: Mapping[str, int]
     unscored_settings: Mapping[str, float] = field(default_factory=dict)
     scrape: Scrape | None = None
+    player_map: pd.DataFrame | None = None
+    player_map_fetched_at: str | None = None
 
     @property
     def available(self) -> pd.DataFrame:
@@ -65,7 +68,7 @@ class LeagueProjections:
 
     def top(self, n: int = 25, position: str | None = None) -> pd.DataFrame:
         """The most valuable players, by points over replacement."""
-        frame = self.table
+        frame = _one_avg_type(self.table)
         if position:
             frame = frame[frame["pos"] == position]
         columns = [c for c in (
@@ -84,7 +87,7 @@ class LeagueProjections:
                 f"{position}{rank}" for position, rank
                 in sorted(self.replacement_ranks.items())
             ),
-            f"  players projected: {len(self.table)}",
+            f"  players projected: {len(_one_avg_type(self.table))}",
         ]
         if self.scrape is not None:
             lines.append("  sources used: " + ", ".join(self.scrape.sources()))
@@ -109,6 +112,16 @@ def _scoring_summary(scoring: ScoringRules, league: SleeperLeague) -> str:
     return ", ".join(parts)
 
 
+def _one_avg_type(table: pd.DataFrame) -> pd.DataFrame:
+    """One row per player when the table holds several averaging methods."""
+    if len(table) and "avg_type" in table.columns:
+        kinds = table["avg_type"].unique()
+        if len(kinds) > 1:
+            pick = "weighted" if "weighted" in kinds else kinds[0]
+            return table[table["avg_type"] == pick]
+    return table
+
+
 # ---------------------------------------------------------------------------
 # Replacement level
 # ---------------------------------------------------------------------------
@@ -124,6 +137,8 @@ def replacement_ranks(league: SleeperLeague,
     projections themselves, best player first, and each position's replacement
     rank is however many of them ended up starting.
     """
+    if table is not None:
+        table = _one_avg_type(table)
     slots = league.starting_slots
     teams = max(league.teams, 1)
 
@@ -176,9 +191,10 @@ def replacement_ranks(league: SleeperLeague,
 # ---------------------------------------------------------------------------
 
 def attach_league_context(table: pd.DataFrame, league: SleeperLeague,
-                          include_draft: bool = True) -> pd.DataFrame:
+                          players: pd.DataFrame | None = None) -> pd.DataFrame:
     """Add Sleeper identity, injury status and who holds each player."""
-    players = sleeper_player_map()
+    if players is None:
+        players = sleeper_player_map()
     crosswalk = (
         players[players["id"].notna()]
         [["id", "sleeper_id", "sleeper_team", "injury_status", "sleeper_pos"]]
@@ -197,18 +213,6 @@ def attach_league_context(table: pd.DataFrame, league: SleeperLeague,
         merged["rostered_by"] = pd.NA
         merged["manager"] = pd.NA
         merged["starting"] = pd.NA
-
-    if include_draft:
-        try:
-            picks = draft_picks(league.league_id)
-        except Exception as error:  # noqa: BLE001 - a draft may not exist yet
-            print(f"  (no draft data: {type(error).__name__}: {error})")
-            picks = pd.DataFrame()
-        if len(picks):
-            latest = picks.sort_values("season").drop_duplicates("sleeper_id",
-                                                                 keep="last")
-            merged = merged.merge(latest[["sleeper_id", "draft_round", "draft_pick"]],
-                                  on="sleeper_id", how="left")
 
     # The player table spells teams the MyFantasyLeague way (SFO, NEP, KCC);
     # print the abbreviations everyone else uses.
@@ -231,7 +235,7 @@ def build_league_projections(
     season: int | None = None,
     sources: Sequence[str] = DEFAULT_SOURCES,
     positions: Sequence[str] | None = None,
-    avg_type: str = "average",
+    avg_type: str = "all",
     with_ecr: bool = True,
     with_adp: bool = True,
     **scrape_kwargs,
@@ -285,16 +289,24 @@ def build_league_projections(
             table["adp_diff"] = table["rank"] - table["adp"]
 
     print("\nMatching players to Sleeper rosters")
-    table = attach_league_context(table, league)
+    player_map = sleeper_player_map()
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    table = attach_league_context(table, league, players=player_map)
 
-    table = table.sort_values("points_vor", ascending=False).reset_index(drop=True)
+    if "avg_type" in table.columns:
+        table = table.sort_values(["avg_type", "points_vor"],
+                                  ascending=[True, False])
+    else:
+        table = table.sort_values("points_vor", ascending=False)
     return LeagueProjections(
         league=league,
         scoring=scoring,
-        table=_order_columns(table),
+        table=_order_columns(table.reset_index(drop=True)),
         replacement_ranks=baselines,
         unscored_settings=unscored,
         scrape=scrape,
+        player_map=player_map,
+        player_map_fetched_at=fetched_at,
     )
 
 
@@ -302,7 +314,7 @@ _COLUMN_ORDER = [
     "rank", "pos_rank", "tier", "player", "pos", "team", "points", "points_vor",
     "sd_pts", "floor", "ceiling", "floor_vor", "ceiling_vor", "dropoff",
     "uncertainty", "pos_ecr", "sd_ecr", "adp", "adp_sd", "adp_diff",
-    "rostered_by", "manager", "starting", "draft_round", "draft_pick",
+    "rostered_by", "manager", "starting",
     "injury_status", "age", "exp", "sources", "id", "sleeper_id", "avg_type",
 ]
 

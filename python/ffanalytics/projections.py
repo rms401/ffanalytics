@@ -120,6 +120,13 @@ def source_points(frames: Mapping[str, pd.DataFrame],
         scored = [c for c in frame.columns if c in values and values[c]]
         if scored:
             numbers = frame[scored].apply(pd.to_numeric, errors="coerce")
+            # Imputation should have left nothing missing; a NaN here would
+            # silently score as zero.
+            leftover = numbers.isna().sum()
+            leftover = leftover[leftover > 0]
+            if len(leftover):
+                print(f"warning: {position} NaN survived imputation in "
+                      + ", ".join(f"{c} ({n})" for c, n in leftover.items()))
             points = (numbers * pd.Series({c: values[c] for c in scored})).sum(
                 axis=1, skipna=True
             )
@@ -129,7 +136,9 @@ def source_points(frames: Mapping[str, pd.DataFrame],
         if position == "DST" and "dst_pts_allowed" in frame.columns:
             bracket_points = _defense_points_allowed(frame, scoring_rules, week)
             frame["dst_pts_allowed_points"] = bracket_points
-            points = points + bracket_points.fillna(0)
+            # A failed simulation stays NaN so the row filters out, rather
+            # than scoring without its bracket.
+            points = points + bracket_points
 
         frame["projected_points"] = points
         out[position] = frame
@@ -188,6 +197,19 @@ def _summarise(frame: pd.DataFrame, position: str, avg_type: str) -> pd.DataFram
     summary = pd.DataFrame(rows)
     if summary.empty:
         return summary
+
+    # A single source has no spread of its own, which would pretend the
+    # projection is certain; borrow the typical disagreement of the players
+    # several sources cover.
+    solo = (summary["sources"] == 1) & summary["sd_pts"].isna()
+    typical = summary.loc[summary["sources"] > 1, "sd_pts"].median()
+    if solo.any() and np.isfinite(typical):
+        summary.loc[solo, "sd_pts"] = typical
+        summary.loc[solo, "floor"] = (
+            summary.loc[solo, "points"] - 1.645 * typical
+        ).clip(lower=0)
+        summary.loc[solo, "ceiling"] = summary.loc[solo, "points"] + 1.645 * typical
+
     keep = np.isfinite(summary["points"]) & (summary["points"] > 0)
     return summary[keep].reset_index(drop=True)
 
@@ -254,7 +276,7 @@ def _replacement_value(values: pd.Series, ranks: pd.Series, baseline: int) -> fl
 def projections_table(
     scrape,
     scoring_rules: ScoringRules = DEFAULT_SCORING,
-    avg_type: str | Sequence[str] = "average",
+    avg_type: str | Sequence[str] = "all",
     replacement_ranks: Mapping[str, int] | None = None,
     tier_thresholds: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
@@ -278,9 +300,13 @@ def projections_table(
 
     ``avg_type`` picks how sources are combined: ``average`` is the plain
     mean, ``robust`` resists one site being far out on its own, and
-    ``weighted`` uses each site's published accuracy weight.
+    ``weighted`` uses each site's published accuracy weight.  The default
+    ``all`` computes all three, stacked and ranked independently.
     """
-    avg_types = [avg_type] if isinstance(avg_type, str) else list(avg_type)
+    if isinstance(avg_type, str):
+        avg_types = list(AVERAGE_TYPES) if avg_type == "all" else [avg_type]
+    else:
+        avg_types = list(avg_type)
     replacement_ranks = replacement_ranks or REPLACEMENT_RANKS
     tier_thresholds = tier_thresholds or TIER_THRESHOLDS
 

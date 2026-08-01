@@ -11,6 +11,12 @@ sources for the same player*:
 * anything else takes the mean of the sources that did report it;
 * the milestone bonus columns, which no site reports, come from a regression
   on the matching yardage column fitted against historical play-by-play.
+
+A player only one source covers has no other sources to borrow from, so the
+fill continues down a chain: the position-wide rate where a rate rule exists,
+then the positional median among players projected for similar points.  A
+missing stat always ends up imputed; an explicit zero is a real zero and is
+never touched.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from typing import Callable, Mapping
 import numpy as np
 import pandas as pd
 
-from .players import DATA_DIR
+from .players import DATA_DIR, resolve_ids
 
 __all__ = [
     "impute_missing_stats",
@@ -52,18 +58,25 @@ def from_mean(values: pd.Series) -> pd.Series:
     return numbers.fillna(numbers.mean())
 
 
-def from_rate(values: pd.Series, reference: pd.Series) -> pd.Series:
+def from_rate(values: pd.Series, reference: pd.Series,
+              fallback: float | None = None) -> pd.Series:
     """Fill gaps with the average ``values / reference`` rate times ``reference``.
 
     Falls back to the plain mean when a reference behind a known value is zero,
-    since the rate would be meaningless.
+    since the rate would be meaningless.  ``fallback`` is a rate computed on a
+    wider frame, used when every value is missing and no rate of our own can
+    exist.
     """
     numbers = pd.to_numeric(values, errors="coerce")
     denominator = pd.to_numeric(reference, errors="coerce")
     missing = numbers.isna()
 
-    if missing.all() or not missing.any():
+    if not missing.any():
         return numbers
+    if missing.all():
+        return numbers if fallback is None else numbers.mask(
+            missing, denominator * fallback
+        )
     known = ~missing
     if (denominator[known] == 0).any() or denominator[known].isna().all():
         return from_mean(numbers)
@@ -75,23 +88,28 @@ def from_rate(values: pd.Series, reference: pd.Series) -> pd.Series:
     return numbers.mask(missing, denominator * rate)
 
 
-def _rate_rule(column: str, reference: str) -> Callable[[pd.DataFrame], pd.Series]:
-    def rule(frame: pd.DataFrame) -> pd.Series:
+def _rate_rule(column: str, reference: str) -> Callable[..., pd.Series]:
+    def rule(frame: pd.DataFrame, fallback: float | None = None) -> pd.Series:
         if reference not in frame.columns:
             return from_mean(frame[column])
-        return from_rate(frame[column], frame[reference])
+        return from_rate(frame[column], frame[reference], fallback)
 
+    rule.reference = reference
     return rule
 
 
-def _field_goals_missed(frame: pd.DataFrame) -> pd.Series:
+def _field_goals_missed(frame: pd.DataFrame,
+                        fallback: float | None = None) -> pd.Series:
     """Misses are attempts minus makes where a site reports both."""
     missed = pd.to_numeric(frame["fg_miss"], errors="coerce")
     made = pd.to_numeric(frame.get("fg"), errors="coerce")
     attempted = pd.to_numeric(frame.get("fg_att"), errors="coerce")
     if attempted is not None and made is not None:
         missed = missed.mask(missed.isna(), attempted - made)
-    return from_rate(missed, made) if made is not None else from_mean(missed)
+    return from_rate(missed, made, fallback) if made is not None else from_mean(missed)
+
+
+_field_goals_missed.reference = "fg"
 
 
 #: Stat -> the stat whose rate it is estimated from.
@@ -115,6 +133,55 @@ _RATE_RULES: Mapping[str, Callable[[pd.DataFrame], pd.Series]] = {
     "fg_50": _rate_rule("fg_50", "fg"),
     "fg_miss": _field_goals_missed,
 }
+
+
+def _frame_rate(frame: pd.DataFrame, column: str, reference: str) -> float | None:
+    """Position-wide ``column / reference`` rate, for players no source covers."""
+    if reference not in frame.columns:
+        return None
+    values = pd.to_numeric(frame[column], errors="coerce")
+    denominator = pd.to_numeric(frame[reference], errors="coerce")
+    known = values.notna() & denominator.notna()
+    if not known.any() or denominator[known].sum() == 0:
+        return None
+    rate = values[known].sum() / denominator[known].sum()
+    return float(rate) if np.isfinite(rate) else None
+
+
+def _fumbles_per_touch(frame: pd.DataFrame) -> pd.Series | None:
+    """Position-wide fumbles per touch, applied to each player's touches."""
+    touch_columns = [c for c in ("rush_att", "rec") if c in frame.columns]
+    if not touch_columns:
+        return None
+    touches = frame[touch_columns].apply(pd.to_numeric, errors="coerce").sum(
+        axis=1, skipna=True, min_count=1
+    )
+    fumbles = pd.to_numeric(frame["fumbles_lost"], errors="coerce")
+    known = fumbles.notna() & touches.notna()
+    if not known.any() or touches[known].sum() == 0:
+        return None
+    rate = fumbles[known].sum() / touches[known].sum()
+    return touches * rate if np.isfinite(rate) else None
+
+
+def _decile_median(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Fill from the positional median among similarly projected players.
+
+    Rows are bucketed into deciles of the sites' own point projections, so a
+    fringe player borrows fringe numbers rather than the whole position's.  A
+    WR's median rushing line is ~0, so stats a player would truly never post
+    fill near zero on their own.
+    """
+    values = pd.to_numeric(frame[column], errors="coerce")
+    points = pd.to_numeric(frame["site_pts"], errors="coerce") \
+        if "site_pts" in frame.columns else pd.Series(np.nan, index=frame.index)
+    try:
+        buckets = pd.qcut(points, 10, labels=False, duplicates="drop")
+    except ValueError:
+        buckets = pd.Series(np.nan, index=frame.index)
+    buckets = pd.Series(buckets, index=frame.index).fillna(-1)  # no site_pts
+    filled = values.fillna(values.groupby(buckets).transform("median"))
+    return filled.fillna(values.median())
 
 
 def _reconcile_kicking(frame: pd.DataFrame) -> pd.DataFrame:
@@ -144,7 +211,7 @@ def _reconcile_kicking(frame: pd.DataFrame) -> pd.DataFrame:
                if c in columns]
     if buckets:
         total = frame[buckets].apply(pd.to_numeric, errors="coerce").sum(
-            axis=1, skipna=True
+            axis=1, skipna=True, min_count=1
         )
         frame["fg"] = numeric("fg").fillna(total) if "fg" in columns else total
 
@@ -152,7 +219,7 @@ def _reconcile_kicking(frame: pd.DataFrame) -> pd.DataFrame:
                           "fg_miss_4049", "fg_miss_50") if c in columns]
     if "fg_miss" not in columns and missed:
         frame["fg_miss"] = frame[missed].apply(pd.to_numeric, errors="coerce").sum(
-            axis=1, skipna=True
+            axis=1, skipna=True, min_count=1
         )
     if "fg_miss" not in frame.columns:
         frame["fg_miss"] = np.nan
@@ -201,14 +268,23 @@ def impute_missing_stats(frames: Mapping[str, pd.DataFrame],
                 frame[column] = frame.groupby("id", sort=False)[column].transform(
                     from_mean
                 )
-                continue
-            # A rate rule needs several columns at once, so each player's rows
-            # go through it together.
-            filled = pd.concat(
-                [pd.Series(rule(group), index=group.index)
-                 for _, group in frame.groupby("id", sort=False)]
-            )
-            frame[column] = filled.reindex(frame.index)
+            else:
+                # A rate rule needs several columns at once, so each player's
+                # rows go through it together; a player whose own sources have
+                # nothing borrows the position-wide rate.
+                fallback = _frame_rate(frame, column, rule.reference)
+                filled = pd.concat(
+                    [pd.Series(rule(group, fallback), index=group.index)
+                     for _, group in frame.groupby("id", sort=False)]
+                )
+                frame[column] = filled.reindex(frame.index)
+
+            if column == "fumbles_lost" and frame[column].isna().any():
+                estimate = _fumbles_per_touch(frame)
+                if estimate is not None:
+                    frame[column] = frame[column].fillna(estimate)
+            if frame[column].isna().any():
+                frame[column] = _decile_median(frame, column)
 
         out[position] = frame
     return out
@@ -245,6 +321,21 @@ _SEASON_GAMES = 17
 _FIRST_DOWN_SOURCE = {"rush_fd": "rush_yds", "rec_fd": "rec_yds"}
 
 
+@functools.lru_cache(maxsize=1)
+def _qb_games() -> dict[str, float]:
+    """Razzball's projected games per quarterback, keyed by player id.
+
+    A committed snapshot (``data/qb_games.csv``); season-long runs prefer it
+    to the sources' own games column when dividing carries per game.
+    """
+    frame = pd.read_csv(DATA_DIR / "qb_games.csv")
+    ids = resolve_ids(name=frame["name"], pos="QB", team=frame["team"])
+    return {
+        str(player_id): float(games)
+        for player_id, games in zip(ids, frame["games"]) if pd.notna(player_id)
+    }
+
+
 def _qb_rush_first_downs(frame: pd.DataFrame, games: float) -> pd.Series:
     """Rushing first downs for a quarterback, from carries per game."""
     attempts = pd.to_numeric(frame["rush_att"], errors="coerce")
@@ -254,6 +345,12 @@ def _qb_rush_first_downs(frame: pd.DataFrame, games: float) -> pd.Series:
     per_game = pd.to_numeric(frame.get("games"), errors="coerce") \
         if "games" in frame.columns else pd.Series(np.nan, index=frame.index)
     per_game = per_game.where(per_game > 0).fillna(games)
+    if games == _SEASON_GAMES:
+        razzball = pd.to_numeric(frame["id"].map(_qb_games()), errors="coerce")
+        per_game = razzball.fillna(per_game)
+    # A backup credited with a fraction of a game would read as a heavy
+    # runner; never divide by less than a full game.
+    per_game = per_game.clip(lower=1.0)
 
     carries_per_game = attempts / per_game
     low, mid, _ = QB_RUSH_FD_RATES

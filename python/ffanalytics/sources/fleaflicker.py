@@ -85,7 +85,6 @@ def scrape_fleaflicker(positions=POSITIONS, season=None, week=0,
             body = table.iloc[1:].reset_index(drop=True)
             body.columns = names[: body.shape[1]]
             body = to_numeric_frame(body.replace(["—", "NA", ""], pd.NA))
-            body = body[[c for c in body.columns if body[c].notna().any()]]
 
             site_ids = [
                 re.sub(r".*-(\d+)$", r"\1", link.get("href", ""))
@@ -121,7 +120,10 @@ def scrape_fleaflicker(positions=POSITIONS, season=None, week=0,
 
         if not pages:
             return pd.DataFrame()
-        return pd.concat(pages, ignore_index=True)
+        combined = pd.concat(pages, ignore_index=True)
+        # Drop the never-populated columns only once every page is in, so a
+        # stat dashed out on one page cannot NaN-fill it for the rest.
+        return combined[[c for c in combined.columns if combined[c].notna().any()]]
 
     scraped = for_each_position(site_positions, scrape_one)
 

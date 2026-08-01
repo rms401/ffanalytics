@@ -61,8 +61,11 @@ STARTING_SLOTS: dict[str, tuple[str, ...]] = {
 _BENCH_SLOTS = frozenset({"BN", "IR", "TAXI"})
 
 
+_SESSION = requests.Session()
+
+
 def _get(path: str) -> Any:
-    response = requests.get(f"{_API}/{path}", timeout=_TIMEOUT)
+    response = _SESSION.get(f"{_API}/{path}", timeout=_TIMEOUT)
     response.raise_for_status()
     return response.json()
 
@@ -213,11 +216,14 @@ def sleeper_player_map() -> pd.DataFrame:
     """Sleeper's player list, keyed to our ``id``.
 
     Sleeper's own crosswalk is used where the bundled one already knows the
-    player; the rest are matched on name, position and team.  This is a
-    several-megabyte download on every call.
+    player; the rest are matched on name, position and team.  Fetched as five
+    filtered calls -- active players eligible at QB, RB, WR, TE or K -- and
+    unioned on sleeper_id, a few megabytes total instead of the full map.
     """
     print("Downloading Sleeper's player list")
-    payload = _get("players/nfl") or {}
+    payload: dict[str, Any] = {}
+    for position in ("QB", "RB", "WR", "TE", "K"):
+        payload.update(_get(f"players/nfl?position={position}&active=true") or {})
 
     rows = []
     for sleeper_id, player in payload.items():
@@ -234,8 +240,6 @@ def sleeper_player_map() -> pd.DataFrame:
             "sleeper_team": player.get("team"),
             "status": player.get("status"),
             "injury_status": player.get("injury_status"),
-            "years_exp": player.get("years_exp"),
-            "age": player.get("age"),
         })
 
     frame = pd.DataFrame(rows)
