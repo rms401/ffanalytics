@@ -29,7 +29,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .sleeper import draft_picks, draft_state, fetch_league, sleeper_player_map
+from .sleeper import (draft_picks, draft_state, fetch_league, league_drafts,
+                      sleeper_player_map)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
     from .league import LeagueProjections
@@ -64,14 +65,18 @@ def _now() -> str:
 
 
 def _draft_table(league: "SleeperLeague",
-                 draft_id: str | int | None = None) -> pd.DataFrame:
+                 draft_id: str | int | None = None,
+                 drafts: list[dict] | None = None) -> pd.DataFrame:
     """The draft's slot order with manager names attached, one row per slot.
 
     Fetched fresh each call so the order appears the moment Sleeper assigns
     it.  A league with no draft yet yields an empty (but typed) frame.
+    ``drafts`` passes pre-fetched draft objects through to
+    :func:`ffanalytics.sleeper.draft_state`.
     """
     try:
-        state = draft_state(league.league_id, draft_id=draft_id)
+        state = draft_state(league.league_id, draft_id=draft_id,
+                            drafts=drafts)
     except Exception as error:  # noqa: BLE001 - a draft may not exist yet
         print(f"  (no draft order: {type(error).__name__}: {error})")
         return pd.DataFrame()
@@ -262,6 +267,14 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
     return written
 
 
+#: League and draft metadata reused between refreshes, keyed by
+#: (league_id, draft_id).  :func:`refresh_picks` re-fetches these only on its
+#: ``with_draft`` iterations -- the serve loop's slow cadence -- so the
+#: per-second hot path is one picks request plus the SQLite rewrite.
+_REFRESH_CACHE: dict[tuple[str, str | None],
+                     tuple["SleeperLeague", list[dict]]] = {}
+
+
 def refresh_picks(path: str | Path, league_id: str | int,
                   with_draft: bool = True,
                   draft_id: str | int | None = None) -> set[str]:
@@ -274,7 +287,10 @@ def refresh_picks(path: str | Path, league_id: str | int,
 
     ``with_draft=False`` skips the draft-order table, which changes rarely --
     the serve loop passes it on most iterations so the order is polled on a
-    slower cadence than the picks.
+    slower cadence than the picks.  Those iterations also reuse the league
+    and draft metadata fetched on the last ``with_draft=True`` call, leaving
+    a single Sleeper request (the picks) per iteration; a one-shot call with
+    the default ``with_draft=True`` always fetches everything fresh.
 
     ``draft_id`` polls that Sleeper draft instead of the league's own -- the
     mock-draft rehearsal path.  The board, scoring and projections stay the
@@ -286,8 +302,15 @@ def refresh_picks(path: str | Path, league_id: str | int,
             f"No database at {path} -- write one with a full run first"
         )
 
-    league = fetch_league(league_id)
-    picks = draft_picks(league_id, draft_id=draft_id)
+    key = (str(league_id), None if draft_id is None else str(draft_id))
+    cached = None if with_draft else _REFRESH_CACHE.get(key)
+    if cached is None:
+        league = fetch_league(league_id)
+        drafts = league_drafts(league_id, draft_id=draft_id)
+        _REFRESH_CACHE[key] = (league, drafts)
+    else:
+        league, drafts = cached
+    picks = draft_picks(league_id, draft_id=draft_id, drafts=drafts)
 
     with sqlite3.connect(path) as connection:
         try:
@@ -308,7 +331,8 @@ def refresh_picks(path: str | Path, league_id: str | int,
                 "CREATE INDEX ownership_sleeper ON ownership (sleeper_id)"
             )
         if with_draft:
-            _replace(connection, "draft", _draft_table(league, draft_id))
+            _replace(connection, "draft",
+                     _draft_table(league, draft_id, drafts=drafts))
         connection.execute("UPDATE meta SET written_at = ?", (_now(),))
 
     return set(ownership["sleeper_id"].dropna().astype(str)) - before

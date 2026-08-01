@@ -185,17 +185,17 @@ tr.drafted .pos-badge { opacity: 0.45; }
 .injury { color: var(--warning); font-size: 11px; margin-left: 5px; }
 .drafted-by { color: var(--ink-muted); font-size: 12px; }
 
-/* ---- inspector ------------------------------------------------------- */
+/* ---- inspector (selected player, bottom slot 2) ---------------------- */
 
-#inspector {
-  width: 380px;
-  flex: none;
-  overflow: auto;
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 14px;
+#inspector-head {
+  align-items: center;
+  color: var(--ink-muted);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  letter-spacing: 0.05em;
+  margin-bottom: 7px;
+  text-transform: uppercase;
 }
 
 #inspector-close {
@@ -203,28 +203,27 @@ tr.drafted .pos-badge { opacity: 0.45; }
   border: none;
   color: var(--ink-muted);
   cursor: pointer;
-  font-size: 18px;
-  position: absolute;
-  right: 8px;
-  top: 6px;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
 }
 #inspector-close:hover { color: var(--ink); }
 
-#inspector h2 { font-size: 16px; margin: 0 0 2px; }
-#inspector .sub { color: var(--ink-2); margin-bottom: 12px; }
+#inspector h2 { font-size: 14px; margin: 0 0 2px; }
+#inspector .sub { color: var(--ink-2); font-size: 12px; margin-bottom: 8px; }
 
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 .stat-tile {
   background: var(--surface-2);
   border-radius: 5px;
-  padding: 7px 9px;
+  padding: 4px 8px;
 }
-.stat-tile .v { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.stat-tile .v { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .stat-tile .k {
   color: var(--ink-muted);
   font-size: 10px;
@@ -237,8 +236,8 @@ tr.drafted .pos-badge { opacity: 0.45; }
   color: var(--ink-muted);
   font-size: 11px;
   letter-spacing: 0.05em;
-  margin: 14px 0 6px;
-  padding-top: 10px;
+  margin: 10px 0 4px;
+  padding-top: 8px;
   text-transform: uppercase;
 }
 
@@ -262,21 +261,26 @@ tr.drafted .pos-badge { opacity: 0.45; }
 
 /* ---- bottom strip ---------------------------------------------------- */
 
+/* Four boxes across: advisor (widest), selected player, my team, draft
+   log (narrowest). Fixed height keeps the divide low so the board gets
+   the room; each box scrolls internally. */
 #bottom {
   display: flex;
   gap: 8px;
-  min-height: 96px;
+  height: 220px;
 }
 
-#roster, #ticker, #advisor {
+#advisor, #inspector, #roster, #ticker {
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 6px;
-  padding: 8px 12px;
+  min-width: 0;
   overflow: auto;
+  padding: 8px 12px;
 }
-#roster { flex: 3; }
-#advisor { flex: 3; max-height: 240px; }
+#advisor { flex: 4; }
+#inspector { flex: 3; }
+#roster { flex: 2; }
 #ticker { flex: 2; }
 
 #advisor-head {
@@ -331,22 +335,35 @@ tr.drafted .pos-badge { opacity: 0.45; }
   padding: 3px 8px;
 }
 
-#roster-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+/* One slot per row, never wrapping; the box scrolls when the roster is
+   taller than the strip. */
+#roster-slots { display: flex; flex-direction: column; gap: 4px; }
 .slot {
+  align-items: baseline;
   background: var(--surface-2);
   border: 1px dashed var(--baseline);
   border-radius: 5px;
-  min-width: 96px;
-  padding: 4px 8px;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 8px;
 }
 .slot.filled { border-style: solid; border-color: var(--good); }
 .slot .slot-name {
   color: var(--ink-muted);
+  flex: none;
   font-size: 10px;
   letter-spacing: 0.05em;
+  min-width: 64px;
   text-transform: uppercase;
 }
-.slot .slot-player { font-size: 12px; font-weight: 600; }
+.slot .slot-player {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .slot .slot-player.empty { color: var(--ink-muted); font-weight: 400; }
 
 #ticker-head {

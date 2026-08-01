@@ -15,7 +15,6 @@ const ui = {
   freshness: document.getElementById("freshness"),
   head: document.getElementById("board-head"),
   body: document.getElementById("board-body"),
-  inspector: document.getElementById("inspector"),
   inspectorBody: document.getElementById("inspector-body"),
   inspectorClose: document.getElementById("inspector-close"),
   me: document.getElementById("me"),
@@ -332,12 +331,13 @@ function renderRoster() {
   }
 }
 
-/* ---- inspector -------------------------------------------------------- */
+/* ---- inspector (selected player box) ---------------------------------- */
 
 async function openInspector(row) {
   selectedId = row.id;
   renderBoard();
-  ui.inspector.hidden = false;
+  ui.inspectorClose.hidden = false;
+  ui.inspectorBody.className = "";
   ui.inspectorBody.textContent = "loading…";
 
   let detail;
@@ -591,7 +591,9 @@ ui.me.addEventListener("change", () => {
   renderAdvisor();
 });
 ui.inspectorClose.addEventListener("click", () => {
-  ui.inspector.hidden = true;
+  ui.inspectorClose.hidden = true;
+  ui.inspectorBody.className = "dim";
+  ui.inspectorBody.textContent = "click a player";
   selectedId = null;
   renderBoard();
 });

@@ -29,23 +29,25 @@
       <tbody id="board-body"></tbody>
     </table>
   </section>
-  <aside id="inspector" hidden>
-    <button id="inspector-close" aria-label="close">&times;</button>
-    <div id="inspector-body"></div>
-  </aside>
 </main>
 
 <footer id="bottom">
+  <section id="advisor">
+    <div id="advisor-head">advisor <span id="advisor-status" class="dim"></span></div>
+    <div id="advisor-body" class="dim">pick your team to see the plan</div>
+  </section>
+  <section id="inspector">
+    <div id="inspector-head">selected player
+      <button id="inspector-close" aria-label="clear" hidden>&times;</button>
+    </div>
+    <div id="inspector-body" class="dim">click a player</div>
+  </section>
   <section id="roster">
     <div id="roster-head">
       <label for="me">my team</label>
       <select id="me"><option value="">&mdash; pick your team &mdash;</option></select>
     </div>
     <div id="roster-slots"></div>
-  </section>
-  <section id="advisor">
-    <div id="advisor-head">advisor <span id="advisor-status" class="dim"></span></div>
-    <div id="advisor-body" class="dim">pick your team to see the plan</div>
   </section>
   <section id="ticker">
     <div id="ticker-head">latest picks</div>

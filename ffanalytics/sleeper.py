@@ -502,8 +502,24 @@ _DRAFT_STATE_COLUMNS = ["slot", "user_id", "roster_id", "draft_id", "season",
                         "status", "type", "rounds", "teams"]
 
 
+def league_drafts(league_id: str | int,
+                  draft_id: str | int | None = None) -> list[dict]:
+    """The draft objects to read: the one draft, or the league's list.
+
+    This is the metadata half of :func:`draft_picks` -- it changes rarely
+    (a draft appearing, its order or status flipping), so a caller polling
+    for picks can fetch it once and hand it back via ``drafts=`` instead of
+    paying the round trip on every poll.
+    """
+    if draft_id is not None:
+        draft = _get(f"draft/{draft_id}")
+        return [draft] if draft else []
+    return _get(f"league/{league_id}/drafts") or []
+
+
 def draft_state(league_id: str | int,
-                draft_id: str | int | None = None) -> pd.DataFrame:
+                draft_id: str | int | None = None,
+                drafts: list[dict] | None = None) -> pd.DataFrame:
     """The newest draft's shape and order, one row per draft slot.
 
     Sleeper publishes ``draft_order`` as soon as the order is set, even while
@@ -512,17 +528,15 @@ def draft_state(league_id: str | int,
     without an assigned user keep a null ``user_id``.
 
     ``draft_id`` polls that draft directly instead of the league's own --
-    any Sleeper draft works, including a mock-draft room's id.
+    any Sleeper draft works, including a mock-draft room's id.  ``drafts``
+    supplies pre-fetched draft objects (see :func:`league_drafts`) so no
+    request is made here.
     """
-    if draft_id is not None:
-        draft = _get(f"draft/{draft_id}")
-        if not draft:
-            return pd.DataFrame(columns=_DRAFT_STATE_COLUMNS)
-    else:
-        drafts = _get(f"league/{league_id}/drafts") or []
-        if not drafts:
-            return pd.DataFrame(columns=_DRAFT_STATE_COLUMNS)
-        draft = drafts[0]  # newest first
+    if drafts is None:
+        drafts = league_drafts(league_id, draft_id=draft_id)
+    if not drafts:
+        return pd.DataFrame(columns=_DRAFT_STATE_COLUMNS)
+    draft = drafts[0]  # newest first
     settings = draft.get("settings") or {}
     order = draft.get("draft_order") or {}
     slot_roster = draft.get("slot_to_roster_id") or {}
@@ -544,17 +558,17 @@ def draft_state(league_id: str | int,
 
 
 def draft_picks(league_id: str | int,
-                draft_id: str | int | None = None) -> pd.DataFrame:
+                draft_id: str | int | None = None,
+                drafts: list[dict] | None = None) -> pd.DataFrame:
     """Every pick made in this league's drafts, newest draft first.
 
     ``draft_id`` reads that one draft instead -- the mock-draft rehearsal
-    path (see :func:`draft_state`).
+    path (see :func:`draft_state`).  ``drafts`` supplies pre-fetched draft
+    objects (see :func:`league_drafts`), leaving only the picks requests
+    themselves -- the shape the per-second refresh loop needs.
     """
-    if draft_id is not None:
-        draft = _get(f"draft/{draft_id}")
-        drafts = [draft] if draft else []
-    else:
-        drafts = _get(f"league/{league_id}/drafts") or []
+    if drafts is None:
+        drafts = league_drafts(league_id, draft_id=draft_id)
     rows = []
     for draft in drafts:
         if draft.get("status") == "pre_draft" and draft_id is None:
