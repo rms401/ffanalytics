@@ -163,7 +163,7 @@ def _managers(connection: sqlite3.Connection) -> list[dict]:
 
 
 def create_app(db_path: str | Path, league_id: str | int | None = None,
-               poll_seconds: float = 5.0):
+               poll_seconds: float = 1.0):
     """Build the FastAPI app over ``db_path``.
 
     ``league_id`` turns on the background pick-refresh loop; without it the
@@ -271,7 +271,7 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
 
 
 def serve(db_path: str | Path, league_id: str | int | None,
-          port: int = 8000, poll_seconds: float = 5.0) -> None:
+          port: int = 8000, poll_seconds: float = 1.0) -> None:
     """Run the board at ``http://127.0.0.1:<port>`` until interrupted."""
     import uvicorn
 

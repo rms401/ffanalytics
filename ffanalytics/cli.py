@@ -62,9 +62,9 @@ def _parser() -> argparse.ArgumentParser:
                              "the background (needs the [web] extra)")
     parser.add_argument("--port", type=int, default=8000,
                         help="port for --serve (default: 8000)")
-    parser.add_argument("--poll", type=float, default=5.0, metavar="SECONDS",
+    parser.add_argument("--poll", type=float, default=1.0, metavar="SECONDS",
                         help="how often --serve re-fetches the draft picks "
-                             "(default: 5)")
+                             "(default: 1)")
     parser.add_argument("--no-ecr", action="store_true",
                         help="skip the expert consensus rankings scrape")
     parser.add_argument("--no-adp", action="store_true",

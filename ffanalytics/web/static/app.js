@@ -3,7 +3,7 @@
 
 "use strict";
 
-const POLL_MS = 5000;
+const POLL_MS = 1000;
 const POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DST", "DL", "LB", "DB"];
 
 const ui = {
@@ -430,20 +430,28 @@ function renderHeader() {
   ui.leagueDetail.textContent = bits.join(" · ");
 }
 
+function clockTime(iso) {
+  return new Date(Date.parse(iso)).toLocaleTimeString([], { hour12: false });
+}
+
 function renderFreshness() {
   if (!state) return;
   const refresh = state.refresh || {};
-  const written = state.meta && state.meta.written_at;
+  // Last successful pick refresh; the database write stamp covers the case
+  // where no refresh loop is running (serving a file as-is).
+  const good = refresh.last_success ||
+    (state.meta && state.meta.written_at);
   ui.freshness.classList.remove("stale", "error");
   if (refresh.error) {
-    ui.freshness.textContent = `refresh failing: ${refresh.error}`;
+    ui.freshness.textContent = `refresh failing: ${refresh.error}` +
+      (good ? ` · last good ${clockTime(good)}` : "");
     ui.freshness.classList.add("error");
     return;
   }
-  if (!written) { ui.freshness.textContent = "—"; return; }
-  const age = Math.max(0, Math.round((Date.now() - Date.parse(written)) / 1000));
-  ui.freshness.textContent = `picks as of ${age}s ago`;
-  if (refresh.polling && age > Math.max(30, 4 * (refresh.poll_seconds || 5))) {
+  if (!good) { ui.freshness.textContent = "—"; return; }
+  const age = Math.max(0, Math.round((Date.now() - Date.parse(good)) / 1000));
+  ui.freshness.textContent = `picks refreshed ${clockTime(good)} (${age}s ago)`;
+  if (refresh.polling && age > Math.max(10, 4 * (refresh.poll_seconds || 1))) {
     ui.freshness.classList.add("stale");
   }
 }
