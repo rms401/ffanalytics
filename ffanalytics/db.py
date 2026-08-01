@@ -63,14 +63,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _draft_table(league: "SleeperLeague") -> pd.DataFrame:
+def _draft_table(league: "SleeperLeague",
+                 draft_id: str | int | None = None) -> pd.DataFrame:
     """The draft's slot order with manager names attached, one row per slot.
 
     Fetched fresh each call so the order appears the moment Sleeper assigns
     it.  A league with no draft yet yields an empty (but typed) frame.
     """
     try:
-        state = draft_state(league.league_id)
+        state = draft_state(league.league_id, draft_id=draft_id)
     except Exception as error:  # noqa: BLE001 - a draft may not exist yet
         print(f"  (no draft order: {type(error).__name__}: {error})")
         return pd.DataFrame()
@@ -262,7 +263,8 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
 
 
 def refresh_picks(path: str | Path, league_id: str | int,
-                  with_draft: bool = True) -> set[str]:
+                  with_draft: bool = True,
+                  draft_id: str | int | None = None) -> set[str]:
     """Re-fetch the draft into an existing database -- the fast loop.
 
     Rewrites only ``ownership``, the ``draft`` order table, and the meta
@@ -273,6 +275,10 @@ def refresh_picks(path: str | Path, league_id: str | int,
     ``with_draft=False`` skips the draft-order table, which changes rarely --
     the serve loop passes it on most iterations so the order is polled on a
     slower cadence than the picks.
+
+    ``draft_id`` polls that Sleeper draft instead of the league's own -- the
+    mock-draft rehearsal path.  The board, scoring and projections stay the
+    league's; only the picks and order come from the other room.
     """
     path = Path(path)
     if not path.exists():
@@ -281,7 +287,7 @@ def refresh_picks(path: str | Path, league_id: str | int,
         )
 
     league = fetch_league(league_id)
-    picks = draft_picks(league_id)
+    picks = draft_picks(league_id, draft_id=draft_id)
 
     with sqlite3.connect(path) as connection:
         try:
@@ -302,7 +308,7 @@ def refresh_picks(path: str | Path, league_id: str | int,
                 "CREATE INDEX ownership_sleeper ON ownership (sleeper_id)"
             )
         if with_draft:
-            _replace(connection, "draft", _draft_table(league))
+            _replace(connection, "draft", _draft_table(league, draft_id))
         connection.execute("UPDATE meta SET written_at = ?", (_now(),))
 
     return set(ownership["sleeper_id"].dropna().astype(str)) - before

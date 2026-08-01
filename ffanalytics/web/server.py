@@ -69,10 +69,11 @@ class _RefreshLoop:
     """
 
     def __init__(self, db_path: Path, league_id: str | int,
-                 poll_seconds: float):
+                 poll_seconds: float, draft_id: str | int | None = None):
         self.db_path = db_path
         self.league_id = league_id
         self.poll_seconds = poll_seconds
+        self.draft_id = draft_id
         self.last_attempt: str | None = None
         self.last_success: str | None = None
         self.error: str | None = None
@@ -90,7 +91,8 @@ class _RefreshLoop:
             with_draft = time.monotonic() - last_draft >= DRAFT_ORDER_SECONDS
             try:
                 refresh_picks(self.db_path, self.league_id,
-                              with_draft=with_draft)
+                              with_draft=with_draft,
+                              draft_id=self.draft_id)
             except Exception as error:  # noqa: BLE001 - shown, not fatal
                 self.error = f"{type(error).__name__}: {error}"
             else:
@@ -174,18 +176,21 @@ def _managers(connection: sqlite3.Connection) -> list[dict]:
 
 
 def create_app(db_path: str | Path, league_id: str | int | None = None,
-               poll_seconds: float = 1.0):
+               poll_seconds: float = 1.0,
+               draft_id: str | int | None = None):
     """Build the FastAPI app over ``db_path``.
 
     ``league_id`` turns on the background pick-refresh loop; without it the
-    page still works but only reflects the database as-is.
+    page still works but only reflects the database as-is.  ``draft_id``
+    points the loop at another Sleeper draft -- a mock room -- while the
+    board stays this league's.
     """
     from fastapi import FastAPI, HTTPException
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
     db_path = Path(db_path)
-    refresher = _RefreshLoop(db_path, league_id, poll_seconds)
+    refresher = _RefreshLoop(db_path, league_id, poll_seconds, draft_id)
 
     # Before the first pick the ownership table is empty, but you still need
     # to mark which team is yours -- so the league's member list is fetched
@@ -302,10 +307,15 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
 
 
 def serve(db_path: str | Path, league_id: str | int | None,
-          port: int = 8000, poll_seconds: float = 1.0) -> None:
+          port: int = 8000, poll_seconds: float = 1.0,
+          draft_id: str | int | None = None) -> None:
     """Run the board at ``http://127.0.0.1:<port>`` until interrupted."""
     import uvicorn
 
-    app = create_app(db_path, league_id, poll_seconds=poll_seconds)
+    app = create_app(db_path, league_id, poll_seconds=poll_seconds,
+                     draft_id=draft_id)
+    if draft_id:
+        print(f"Rehearsal: polling Sleeper draft {draft_id} "
+              "instead of the league's own")
     print(f"Draft board at http://127.0.0.1:{port}  (Ctrl-C to stop)")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
