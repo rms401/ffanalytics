@@ -1,95 +1,90 @@
-"""Scrape and aggregate fantasy football projections.
+"""Fantasy football projections, scored for your Sleeper league.
 
-A Python port of the `ffanalytics <https://github.com/FantasyFootballAnalytics/ffanalytics>`_
-R package.  The public names below mirror the R package's exports.
+Scrapes projected stats from the public projection sites, reads your league out
+of Sleeper, and combines the two into one ranked table:
 
     import ffanalytics as ffa
 
-    scrape = ffa.scrape_data(src=["CBS", "NFL", "FanDuel"],
-                             pos=["QB", "RB", "WR", "TE", "DST"],
-                             season=None, week=None)
+    result = ffa.build_league_projections("1234567890")
+    result.table.head(30)
 
-    projections = ffa.projections_table(scrape)
-    projections = ffa.add_ecr(projections)
-    projections = ffa.add_adp(projections)
-    projections = ffa.add_aav(projections)
-    projections = ffa.add_uncertainty(projections)
-    projections = ffa.add_player_info(projections)
+Or from a shell::
 
-``add_ecr`` must be called before ``add_uncertainty``, which uses ``sd_ecr``.
+    python -m ffanalytics --league 1234567890 --db draft.sqlite
+
+The pieces are usable on their own -- :func:`scrape_data` to pull the sites,
+:func:`projections_table` to aggregate them under any
+:class:`~ffanalytics.scoring.ScoringRules`, and :func:`fetch_league` to read a
+league without touching either.
 """
 
-from .adp_functions import (
-    cbs_draft,
-    espn_draft,
-    ffc_draft,
-    get_adp,
-    mfl_draft,
-    nfl_draft,
-    rts_draft,
-    yahoo_draft,
+from .adp import get_adp
+from .db import write_sqlite
+from .ecr import scrape_ecr
+from .league import (
+    LeagueProjections,
+    attach_league_context,
+    build_league_projections,
+    replacement_ranks,
 )
-from .caching import clear_ffanalytics_cache, list_ffanalytics_cache
-from .calc_projections import (
-    add_aav,
-    add_adp,
+from .players import player_ids, player_table, resolve_ids
+from .projections import (
     add_ecr,
     add_player_info,
     add_uncertainty,
-    default_baseline,
-    default_threshold,
-    default_weights,
-    default_weights_by_src,
     projections_table,
     source_points,
 )
-from .custom_scoring import custom_scoring, make_scoring_tables
-from .player_data import player_table
-from .results import ProjectionsTable, ScrapeResult
-from .scoring_rules import scoring, scoring_empty
-from .scrape_ecr import scrape_ecr
-from .scrape_funcs import POSITIONS, SOURCE_NAMES, scrape_data
+from .scoring import DEFAULT_SCORING, PointsAllowedTier, ScoringRules
+from .scrape import POSITIONS, Scrape, scrape_data
+from .season import current_season, current_week
+from .sleeper import (
+    SleeperLeague,
+    fetch_league,
+    leagues_for_user,
+    scoring_rules_from_sleeper,
+    sleeper_player_map,
+)
+from .sources import DEFAULT_SOURCES, SOURCES
 
-__version__ = "3.1.17"
+__version__ = "4.0.0"
 
 __all__ = [
+    # the whole thing, one call
+    "build_league_projections",
+    "LeagueProjections",
     # scraping
     "scrape_data",
-    "scrape_ecr",
-    "SOURCE_NAMES",
+    "Scrape",
+    "SOURCES",
+    "DEFAULT_SOURCES",
     "POSITIONS",
+    "scrape_ecr",
+    "get_adp",
     # scoring and aggregation
-    "scoring",
-    "scoring_empty",
-    "custom_scoring",
-    "make_scoring_tables",
-    "source_points",
+    "ScoringRules",
+    "PointsAllowedTier",
+    "DEFAULT_SCORING",
     "projections_table",
-    # enrichment
+    "source_points",
     "add_ecr",
-    "add_adp",
-    "add_aav",
     "add_uncertainty",
     "add_player_info",
-    # ADP / AAV sources
-    "get_adp",
-    "rts_draft",
-    "cbs_draft",
-    "yahoo_draft",
-    "nfl_draft",
-    "mfl_draft",
-    "ffc_draft",
-    "espn_draft",
-    # defaults
-    "default_weights",
-    "default_weights_by_src",
-    "default_baseline",
-    "default_threshold",
-    # data and containers
+    # Sleeper
+    "fetch_league",
+    "SleeperLeague",
+    "leagues_for_user",
+    "scoring_rules_from_sleeper",
+    "sleeper_player_map",
+    "replacement_ranks",
+    "attach_league_context",
+    # players and identity
     "player_table",
-    "ScrapeResult",
-    "ProjectionsTable",
-    # cache
-    "clear_ffanalytics_cache",
-    "list_ffanalytics_cache",
+    "player_ids",
+    "resolve_ids",
+    # output
+    "write_sqlite",
+    # odds and ends
+    "current_season",
+    "current_week",
 ]

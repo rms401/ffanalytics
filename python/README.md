@@ -1,228 +1,276 @@
-# ffanalytics (Python)
+# ffanalytics
 
-A Python port of the [`ffanalytics`](https://github.com/FantasyFootballAnalytics/ffanalytics)
-R package that lives in the root of this repository. It scrapes projected stats
-from the same public sources, calculates projected points under your league's
-scoring rules, and aggregates the sources into a ranked projections table.
+Fantasy football projections, scraped from the public projection sites and
+scored for **your** league.
 
-Nothing outside this folder is modified. The R package is untouched and remains
-the reference implementation; this port reads its internal data file
-(`../R/sysdata.rda`) directly rather than duplicating it.
+A generic projection is only half an answer. A quarterback worth 4 points a
+passing touchdown is not the same asset at 3; a tight end with a reception
+bonus is not the same asset without one; and "value over replacement" means
+nothing until you know how many of each position twelve teams actually start.
+So this package pulls both halves and puts them together:
 
-## Install
+1. **Scrape** projected stat lines from every site that publishes them.
+2. **Read your Sleeper league** — its scoring settings, its roster slots, and
+   who already owns whom.
+3. **Combine them** into one ranked table: projected points under your rules,
+   how much the sources disagree, floor and ceiling, positional rank, tier,
+   drop-off, value over replacement, expert consensus rank, ADP, and who has
+   the player rostered.
 
 ```bash
-cd python
 pip install -e .
+python -m ffanalytics --league 1328634493078110208 --db draft.sqlite
 ```
 
-Requires Python 3.9+. Dependencies: pandas, numpy, scipy, requests, lxml,
-cssselect, openpyxl.
+```
+People's Republic of Collusion (2026) -- 12 teams
+  starting slots: QB, RB, RB, WR, WR, TE, FLEX, SUPER_FLEX, K
+  bench: 6
+  scoring: 1 PPR, TE premium (2.5), 3 pt pass TD, 0.05/pass yd, superflex
+  replacement level: K12, QB24, RB24, TE21, WR27
+  sources used: CBS, ESPN, FFToday, RTSports, WalterFootball
 
-## Usage
-
-The API mirrors the R package's exports.
-
-```python
-import ffanalytics as ffa
-
-# season = None grabs the current season, week = None the current week.
-# week = 0 means season-long projections.
-scrape = ffa.scrape_data(
-    src=["CBS", "NFL", "FanDuel"],
-    pos=["QB", "RB", "WR", "TE", "DST"],
-    season=None,
-    week=None,
-)
-
-projections = ffa.projections_table(scrape)
+Top of the board (weighted):
+ rank pos  pos_rank  tier              player team  points  points_vor  floor  ceiling  dropoff   adp
+    1  TE         1     1        Trey McBride  ARI   454.6       212.8  433.4    480.0     25.2  29.7
+    2  RB         1     1      Bijan Robinson  ATL   435.8       198.7  407.1    460.6      4.3   2.5
+    3  RB         2     1        Jahmyr Gibbs  DET   431.4       194.4  416.9    451.1     61.3   2.5
+    ...
 ```
 
-`scrape` is a mapping of position to `DataFrame` — one row per player per
-source, with a `data_src` column — plus the `season` and `week` it was for.
-
-`projections_table` returns points, spread, 5th/95th percentile floor and
-ceiling, positional rank, drop-off, tier, and value over replacement, under
-three averaging methods (`average`, `robust`, `weighted`). Restrict them with
-`avg_type=`, and pass `return_raw_stats=True` to aggregate the underlying stats
-instead of fantasy points.
-
-Add rankings, draft data and player details:
-
-```python
-projections = ffa.add_ecr(projections)          # must come before add_uncertainty
-projections = ffa.add_adp(projections)
-projections = ffa.add_aav(projections)
-projections = ffa.add_uncertainty(projections)
-projections = ffa.add_player_info(projections)
-
-projections.df.sort_values("rank").head(20)
-```
-
-### Scoring
-
-`ffa.scoring` is the default rule set. Build your own with `custom_scoring`,
-which takes stat values directly and per-position overrides as dicts:
-
-```python
-rules = ffa.custom_scoring(
-    pass_yds=0.04, pass_tds=4, pass_int=-3,
-    rush_yds=0.1, rush_tds=6,
-    RB={"rec": 1, "rec_yds": 0.1, "rec_tds": 6},
-    WR={"rec": 1, "rec_yds": 0.1, "rec_tds": 6},
-    TE={"rec": 1.5, "rec_yds": 0.1, "rec_tds": 6},   # TE premium
-)
-rules["pts_bracket"] = ffa.scoring["pts_bracket"]     # DST points allowed
-
-ffa.projections_table(scrape, scoring_rules=rules)
-```
-
-As in R, `custom_scoring` does not add a `pts_bracket`; add one yourself if you
-score DSTs.
-
-**Scoring DST points allowed.** The bracket result is written into the
-`dst_pts_allowed` column, which is then multiplied by that stat's scoring value
-— and the package default for it is `0`. A league that scores points allowed by
-bracket must set `dst_pts_allowed` to `1`, or the bracket contributes nothing.
-This is the R package's behaviour, reproduced here.
-
-## Caching
-
-Scraped data is cached on disk, as in R: ADP/AAV and ECR for 8 hours,
-projection scrapes for 1 hour.
-
-```python
-ffa.list_ffanalytics_cache()
-ffa.clear_ffanalytics_cache()
-```
-
-The cache lives under `~/.cache/ffanalytics/python` (override with
-`FFANALYTICS_CACHE_DIR`). It is deliberately **not** shared with the R package's
-cache: R writes `.rds` files, which Python cannot read or write, so a shared
-directory would leave each side with a false view of what is cached.
-
-## How this maps onto the R package
-
-| R | Python |
-|---|---|
-| `R/scrape_funcs.R` | `ffanalytics/scrape_funcs.py` |
-| `R/source_scrapes.R` | `ffanalytics/source_scrapes/` (one module per site) |
-| `R/source_objects.R` | `ffanalytics/source_objects.py` |
-| `R/calc_projections.R` | `ffanalytics/calc_projections.py` |
-| `R/scoring_rules.R`, `R/custom_scoring.R` | `ffanalytics/scoring_rules.py`, `custom_scoring.py` |
-| `R/impute_funcs.R` | `ffanalytics/impute_funcs.py` |
-| `R/helper_funcs.R` | `ffanalytics/helper_funcs.py` |
-| `R/adp_functions.R` | `ffanalytics/adp_functions.py` |
-| `R/scrape_ecr.R` | `ffanalytics/scrape_ecr.py` |
-| `R/caching_helpers.R` | `ffanalytics/caching.py` |
-| `R/recode_vars.R` | `ffanalytics/recode_vars.py` |
-| `R/schedule_data.R` | `ffanalytics/schedule_data.py` |
-| `R/get_league_info.R` | `ffanalytics/get_league_info.py` |
-| `R/sysdata.rda` | read in place by `ffanalytics/rdata.py` + `sysdata.py` |
-| — | `ffanalytics/rcompat/` (R semantics: RNG, ranks, quantiles) |
-
-### Deliberate differences
-
-These are the only places where the Python API departs from R's, and each is
-forced rather than chosen:
-
-- **`get_mfl_id` takes an explicit `id_col_name`.** R derives the crosswalk
-  column from the text of the calling expression via
-  `deparse(substitute(id_col))`. Python has no equivalent, so callers name the
-  column. Behaviour is unchanged, including the two call sites where R's
-  derived name is not a real crosswalk column and the lookup silently falls
-  through to name matching.
-- **Season/week/league type ride on wrapper objects** (`ScrapeResult`,
-  `ProjectionsTable`) rather than attributes. R attaches them as attributes and
-  every `add_*` function re-attaches them by hand because dplyr drops them;
-  pandas' `DataFrame.attrs` is just as lossy, so the contract is made explicit.
-  `ProjectionsTable` proxies attribute access to the frame, and `.df` gets you
-  the frame itself.
-- **The cache uses pickle in its own directory**, for the reason above.
-
-### Reproduced R behaviours worth knowing about
-
-The port mirrors the R package rather than correcting it. Each of these is
-marked in the code with the R line it comes from:
-
-- `scrape_fantasypros` writes its cache under WalterFootball's filename
-  (`R/source_scrapes.R:1187`), so the two sources share one cache slot.
-- `scrape_fanduel` tests `week` when defaulting `season`
-  (`R/source_scrapes.R:1457`).
-- `clean_scoring_sleeper` assembles a scoring object and never returns it
-  (`R/get_league_info.R:34-69`); the Sleeper integration is experimental in R.
-- `impute_fun_list` defines `rec_tgt` twice; R's `[[` returns the first, so the
-  second entry — evidently meant for `rec` — never runs, and `rec` falls through
-  to the plain column mean.
-- The `fg_1019` branch of the `fg_0019` imputation is unreachable in R: it tests
-  `names(df)` where `df` is not an argument, so R resolves it to `stats::df`, a
-  function whose `names()` is `NULL`.
-- `make_scoring_tables` rebinds its shared table inside the position loop, so
-  DL, LB and DB inherit DST's `pts_bracket` row.
-- `score_pts_bracket` falls back to the *first* bracket for a value above every
-  threshold, because `max.col(..., "first")` returns column 1 for an all-false
-  row.
-
-### Reproducibility of the DST simulation
-
-Season-long DST points allowed are simulated with `set.seed(1)` in R.
-`ffanalytics/rcompat/rng.py` reimplements R's seeding, Mersenne-Twister, and
-inversion-based `rnorm` (Wichura's AS241 `qnorm`), so the draws match R's bit
-for bit. The tests pin this against R's published `set.seed` output — if they
-fail, the simulation cannot be trusted.
-
-## Not ported
-
-Scope is the R package's live functionality. Left out, deliberately:
-
-- **`R/to_be_deprecated.R`** — 1000 lines of the superseded v2 pipeline
-  (`add_risk`, `set_vor`, `projected_points`, `scrape_source`, …). None of it is
-  exported; `add_uncertainty` replaced `add_risk` in v3.
-- **`actual_points_scoring`** — internal, and depends on the `nflfastR` R
-  package, which is optional even in R. There is no bundled Python equivalent.
-- **`data/nfl_cols.rda` and `data/projection_sources.rda`** — exported datasets
-  that no R code references. `projection_sources` holds the retired v2 R6
-  objects; `ffanalytics/rdata.py` refuses files containing R code objects rather
-  than decoding them into something misleading.
-
-## Source availability
-
-Same sources as R. Two are affected by the state of the sites themselves, not by
-the port:
-
-- **NumberFire** now redirects to a client-rendered FanDuel Research app with no
-  HTML tables, so the scraper returns nothing. The R package already routes
-  around this — `scrape_data` rewrites `NumberFire` to `FanDuel`.
-- **FantasySharks** has no season-to-segment mapping past 2025 (the R package's
-  table stops there), and the site currently returns HTTP 403 to datacenter IPs
-  regardless of user agent.
-
-Historical seasons generally do not scrape successfully, as the R README notes.
-
-## Tests
+Find your league id in the Sleeper URL — `sleeper.com/leagues/<LEAGUE_ID>/team`
+— or look it up by name:
 
 ```bash
-python -m pytest tests -m "not network"   # offline, deterministic
-python -m pytest tests -m network         # live scrape + full pipeline
+python -m ffanalytics --user your_sleeper_name
 ```
 
-The offline suite covers the RData reader against the real `sysdata.rda`, the R
-semantics layer against R's published values, scoring and imputation on
-hand-computed fixtures, and the full aggregation pipeline on synthetic scrapes.
+## What the league actually changes
 
-If you have R available, the R and Python results can be compared directly:
+**Scoring.** Sleeper's settings are translated into point values per stat.
+Reception bonuses land on the right position, field goal values combine the
+flat rate with the distance bonus, and the points-allowed brackets come across
+in order.
 
-```r
-library(ffanalytics)
-s <- scrape_data(src = c("CBS","NFL"), pos = c("QB","RB"), season = 2025, week = 0)
-projections_table(s, avg_type = "average")
+First downs are not published by any site, but the box score predicts them
+closely enough to estimate:
+
+| | Estimate |
+|---|---|
+| Passing first downs | 4.83% of passing yards |
+| Rushing first downs (RB/WR/TE) | 5.08% of rushing yards |
+| Receiving first downs | 4.50% (RB), 4.83% (WR), 5.03% (TE) of receiving yards |
+| Rushing first downs (QB) | a share of *carries*, not yards: 26.1% under 2 carries a game, 34.2% from 2 to 4, 37.8% above 4 |
+| Receiving first downs (QB) | zero |
+
+A quarterback's first downs are passing plus rushing. The carry-rate tiers
+matter: a quarterback running five times a game is being called for
+short-yardage runs that convert far more often than a scrambler's. Carries per
+game divide by a snap-share games estimate (`data/qb_games.csv`, derived from
+Razzball snap projections and refreshed by hand), clamped to at least one game
+so a fourth-stringer's half-carry cannot read as a rate; quarterbacks not in
+the sheet divide by 17.
+
+What is genuinely unprojectable — how long a touchdown was, mostly — is
+**reported, not silently dropped**:
+
 ```
+  scoring settings with no projectable stat (points your league awards
+  that no source projects):
+    pass_td_50p = 2
+    rush_td_40p = 1
+    ...
+```
+
+so you know exactly which parts of your scoring the table is blind to.
+
+**Replacement level.** Dedicated slots are arithmetic: twelve teams starting
+one tight end means the thirteenth is replaceable. Flex slots are not — whether
+a superflex holds a quarterback or a running back depends on who is worth more.
+So flex slots are filled greedily from the projections themselves, and each
+position's replacement rank is however many of them ended up starting. In the
+superflex league above that puts quarterback replacement level at QB24 rather
+than QB13, which is the whole reason quarterbacks cost what they do there.
+
+**Availability.** Rostered players are tagged with who holds them, so
+`--available-only` shows just the players you can actually get.
+
+## Using it as a library
 
 ```python
 import ffanalytics as ffa
-s = ffa.scrape_data(src=["CBS","NFL"], pos=["QB","RB"], season=2025, week=0)
-ffa.projections_table(s, avg_type="average").df
+
+result = ffa.build_league_projections("1328634493078110208")
+result.table                  # the whole thing
+result.available              # only players nobody rosters
+result.top(20, position="RB")
+print(result.report())
 ```
+
+The pieces work on their own too:
+
+```python
+scrape = ffa.scrape_data(sources=["CBS", "ESPN"], positions=["QB", "RB"], week=0)
+scrape.summary()                      # rows per source per position
+scrape["QB"]                          # one row per player per source
+
+rules, unscored = ffa.scoring_rules_from_sleeper(settings)
+ffa.projections_table(scrape, rules, avg_type="robust")
+```
+
+Or build scoring by hand, with no Sleeper involved:
+
+```python
+from ffanalytics import ScoringRules, PointsAllowedTier
+
+rules = ScoringRules(
+    stats={"pass_yds": 0.04, "pass_tds": 4, "pass_int": -2,
+           "rush_yds": 0.1, "rush_tds": 6,
+           "rec": 1, "rec_yds": 0.1, "rec_tds": 6},
+    by_pos={"TE": {"rec": 1.5}},                       # TE premium
+    pts_bracket=(PointsAllowedTier(0, 10), PointsAllowedTier(13, 4),
+                 PointsAllowedTier(float("inf"), -4)),
+)
+```
+
+## The columns
+
+| Column | What it is |
+|---|---|
+| `points` | the central estimate across sources, under your scoring |
+| `sd_pts` | how much the sources disagree |
+| `floor` / `ceiling` | 5th and 95th percentiles of what they project |
+| `dropoff` | points lost by taking the next player at the position instead |
+| `points_vor` | points above a freely available player at that position |
+| `rank` / `pos_rank` | overall by value over replacement, and within position |
+| `tier` | players grouped by where the meaningful gaps fall |
+| `uncertainty` | 1-99, combining source disagreement with ranker disagreement |
+| `pos_ecr` / `sd_ecr` | FantasyPros expert consensus rank, and its spread |
+| `adp` / `adp_diff` | average draft position, and how it differs from `rank` |
+| `rostered_by` / `starting` | who holds the player in your league |
+| `sources` | how many sites projected this player |
+
+`--avg-type` picks how the sources are combined: `average` (the plain mean),
+`robust` (resists one site being far out on its own), or `weighted` (uses each
+site's published accuracy weight). The default, `all`, computes every one --
+the table carries an `avg_type` column, the display shows the weighted rows,
+and the SQLite file keeps all three.
+
+A stat a source did not publish is treated as missing, never as zero: it is
+filled from the player's other sources, then from position-wide rates, then
+from the median of similarly-projected players at the position. A published
+zero is a zero. Players a site lists without projecting anything are dropped
+rather than imputed into existence.
+
+## Sources
+
+| Source | Season-long | Weekly | Notes |
+|---|---|---|---|
+| CBS | yes | yes | |
+| ESPN | yes | yes | IDP needs `espn_league_id=` |
+| FFToday | yes | yes | |
+| FanDuel | yes | yes | formerly NumberFire; nothing published out of season |
+| FantasySharks | yes | yes | Cloudflare browser challenge, so usually empty from a server; may work from a home IP |
+| NFL | yes | yes | publishes late in the off-season |
+| RTSports | yes | — | |
+| WalterFootball | yes | — | one spreadsheet a year |
+| FleaFlicker | — | yes | no published accuracy weight, so it sits out `weighted` |
+| FantasyPros | yes | yes | a consensus of the others, and capped at ten rows a position — **not scraped by default** |
+
+A site that is down, blocked, or has not published yet is reported and skipped;
+you get everything the rest of them had. `--list-sources` prints this table.
+
+Expert consensus rankings come from FantasyPros' rankings pages, which are not
+capped, and ADP is pooled from RTSports, CBS, Yahoo, NFL, FantasyFootballCalculator,
+MyFantasyLeague and ESPN.
+
+## Output
+
+Every run writes a SQLite database (`--db`, default `ffanalytics.sqlite`; pass
+`-` to skip it):
+
+| Table | What's in it |
+|---|---|
+| `projections` | the ranked table, one row per player per `avg_type` |
+| `source_projections` | what each site said, before they were combined |
+| `scoring` | one row per (position, stat, points); `projected = 0` marks settings your league awards that nothing projects |
+| `slots` | starting slots and replacement ranks, one row each |
+| `ownership` | who holds whom -- draft picks during a draft, rosters after |
+| `players` | the Sleeper player crosswalk, with when it was fetched |
+| `meta` | league facts and `written_at`, the completion time of the last pick refresh |
+
+```bash
+sqlite3 draft.sqlite \
+  "select player, pos, round(points,1), round(points_vor,1)
+   from projections where avg_type = 'weighted' and rostered_by is null
+   order by points_vor desc limit 20"
+```
+
+The file holds the current picture, not a history — each run replaces what was
+there, so the database always reflects the latest scrape.
+
+On draft night, refresh who's taken without re-scraping anything:
+
+```bash
+python -m ffanalytics --league <LEAGUE_ID> --db draft.sqlite --refresh-picks
+```
+
+That rewrites only `ownership` and the `meta.written_at` stamp — about a second
+— so it can sit in a loop between picks while the projections stay put.
+
+Nothing else is cached: a full run fetches everything fresh from every site.
+That is deliberate but not free, so keep the full run out of tight loops and
+let `--refresh-picks` do the draft-day work.
+
+## Layout
+
+```
+ffanalytics/
+  scrape.py        pull every site, stack by position
+  sources/         one module per site, plus the column maps
+  sleeper.py       league, scoring translation, rosters, player list
+  scoring.py       ScoringRules: point values per stat
+  impute.py        fill the stats a source did not report
+  projections.py   score, aggregate, rank, tier, value over replacement
+  league.py        put the scrape and the league together
+  ecr.py, adp.py   expert rankings and draft position
+  players.py       the player universe and the id resolver
+  stats.py         the numeric helpers behind the averages
+  db.py            write the run to SQLite
+  data/            player id crosswalk and two fitted models
+```
+
+`data/` is a snapshot of the four internal tables the R package keeps in
+`R/sysdata.rda`: the player id crosswalk, the milestone-bonus regressions, the
+nesting rules for those bonuses, and the per-team model of how much a defense's
+points allowed swings week to week. The last two came from models fitted
+against play-by-play data in R and cannot be regenerated here, so they are
+carried as data. Nothing in this folder reads outside it.
+
+## Relationship to the R package
+
+This began as a direct port of the [`ffanalytics` R
+package](https://github.com/FantasyFootballAnalytics/ffanalytics) in the root of
+this repository, and the scraping logic, the source accuracy weights, the
+imputation approach and the projection maths are all still its work. The Python
+side has since been simplified and pointed at Sleeper; it no longer tracks the R
+API call for call, and a handful of quirks faithfully reproduced from R have
+been corrected rather than carried:
+
+- points allowed above every bracket scores the *worst* bracket, not the best;
+- the points-allowed bracket applies to team defenses only, not to IDP
+  positions as well;
+- receptions are imputed from receiving yards rather than falling through to a
+  plain column mean;
+- estimated bonus columns are kept for every position, not only those with a
+  nested threshold to roll up;
+- FFToday's player ids are read from the links they belong to, so a page's
+  navigation link no longer shifts every id by one.
+
+Season-long defensive points allowed are simulated (a season total cannot be
+run through a weekly bracket once). R seeded that with `set.seed(1)`; this uses
+NumPy's generator with a fixed seed, so it is reproducible here but does not
+match R draw for draw.
 
 ## Licence
 
