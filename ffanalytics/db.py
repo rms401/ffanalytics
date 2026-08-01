@@ -268,9 +268,12 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
 
 
 #: League and draft metadata reused between refreshes, keyed by
-#: (league_id, draft_id).  :func:`refresh_picks` re-fetches these only on its
-#: ``with_draft`` iterations -- the serve loop's slow cadence -- so the
-#: per-second hot path is one picks request plus the SQLite rewrite.
+#: (league_id, draft_id).  The league (with its users and rosters) changes
+#: never during a draft, so :func:`refresh_picks` fetches it once per process
+#: and keeps it; the draft metadata (order assignment, status flipping live)
+#: is re-fetched only on ``with_draft`` iterations -- the serve loop's slow
+#: cadence.  The per-second hot path is one picks request plus the SQLite
+#: rewrite.
 _REFRESH_CACHE: dict[tuple[str, str | None],
                      tuple["SleeperLeague", list[dict]]] = {}
 
@@ -287,10 +290,10 @@ def refresh_picks(path: str | Path, league_id: str | int,
 
     ``with_draft=False`` skips the draft-order table, which changes rarely --
     the serve loop passes it on most iterations so the order is polled on a
-    slower cadence than the picks.  Those iterations also reuse the league
-    and draft metadata fetched on the last ``with_draft=True`` call, leaving
-    a single Sleeper request (the picks) per iteration; a one-shot call with
-    the default ``with_draft=True`` always fetches everything fresh.
+    slower cadence than the picks.  The league itself (users, rosters) is
+    fetched once per process and never again; the draft metadata is
+    re-fetched on ``with_draft`` iterations; only the picks request runs
+    every time.  A one-shot call in a fresh process fetches everything.
 
     ``draft_id`` polls that Sleeper draft instead of the league's own -- the
     mock-draft rehearsal path.  The board, scoring and projections stay the
@@ -303,13 +306,12 @@ def refresh_picks(path: str | Path, league_id: str | int,
         )
 
     key = (str(league_id), None if draft_id is None else str(draft_id))
-    cached = None if with_draft else _REFRESH_CACHE.get(key)
-    if cached is None:
+    league, drafts = _REFRESH_CACHE.get(key, (None, None))
+    if league is None:
         league = fetch_league(league_id)
+    if drafts is None or with_draft:
         drafts = league_drafts(league_id, draft_id=draft_id)
-        _REFRESH_CACHE[key] = (league, drafts)
-    else:
-        league, drafts = cached
+    _REFRESH_CACHE[key] = (league, drafts)
     picks = draft_picks(league_id, draft_id=draft_id, drafts=drafts)
 
     with sqlite3.connect(path) as connection:
