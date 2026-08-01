@@ -55,6 +55,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+#: How often the serve loop re-fetches the draft-order table.  Picks refresh
+#: every ``poll_seconds``; the order changes rarely and can lag behind.
+DRAFT_ORDER_SECONDS = 15.0
+
+
 class _RefreshLoop:
     """Re-fetch the draft into the database every ``poll_seconds``.
 
@@ -79,13 +84,18 @@ class _RefreshLoop:
             self._thread.start()
 
     def _run(self) -> None:
+        last_draft = 0.0
         while True:
             self.last_attempt = _now()
+            with_draft = time.monotonic() - last_draft >= DRAFT_ORDER_SECONDS
             try:
-                refresh_picks(self.db_path, self.league_id)
+                refresh_picks(self.db_path, self.league_id,
+                              with_draft=with_draft)
             except Exception as error:  # noqa: BLE001 - shown, not fatal
                 self.error = f"{type(error).__name__}: {error}"
             else:
+                if with_draft:
+                    last_draft = time.monotonic()
                 self.last_success = _now()
                 self.error = None
             time.sleep(self.poll_seconds)
