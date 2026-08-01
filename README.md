@@ -222,6 +222,33 @@ Nothing else is cached: a full run fetches everything fresh from every site.
 That is deliberate but not free, so keep the full run out of tight loops and
 let `--refresh-picks` do the draft-day work.
 
+## The draft board
+
+Rather than running `--refresh-picks` by hand, serve the whole thing as a
+local web page:
+
+```bash
+pip install -e ".[web]"
+python -m ffanalytics --league <LEAGUE_ID> --db draft.sqlite --serve
+```
+
+That opens a draft board at `http://127.0.0.1:8000` (change with `--port`)
+over the database a full run already wrote. A background loop runs
+`refresh_picks` every 5 seconds (`--poll` to change), and the page polls the
+server, so drafted players gray out on the board moments after they are
+picked. The board is built for a full screen of its own on draft night:
+
+- the ranked table (weighted averages) with position filters, a player
+  search, tier breaks, and a hide-drafted toggle;
+- click any player for their per-source stat lines, floor/ceiling spread and
+  the combined projection under each averaging method;
+- pick your team in the footer and your picks fill your league's actual
+  starting slots, so you can see what you still need;
+- a ticker of the latest picks, with new ones flashing as they land.
+
+Everything is read from the SQLite file on every poll — nothing is scraped —
+so the server is safe to leave running all night.
+
 ## Layout
 
 ```
@@ -237,6 +264,7 @@ ffanalytics/
   players.py       the player universe and the id resolver
   stats.py         the numeric helpers behind the averages
   db.py            write the run to SQLite
+  web/             the local draft-board page and its server
   data/            player id crosswalk and two fitted models
 ```
 

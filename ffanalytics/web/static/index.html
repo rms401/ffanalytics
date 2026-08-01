@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ffanalytics draft board</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div id="league">
+    <span id="league-name">loading&hellip;</span>
+    <span id="league-detail" class="dim"></span>
+  </div>
+  <div id="controls">
+    <input id="search" type="search" placeholder="find player&hellip;" autocomplete="off">
+    <nav id="pos-chips" aria-label="position filter"></nav>
+    <label id="hide-drafted-wrap">
+      <input id="hide-drafted" type="checkbox"> hide drafted
+    </label>
+  </div>
+  <div id="freshness" class="dim">&mdash;</div>
+</header>
+
+<main id="content">
+  <section id="board-wrap">
+    <table id="board">
+      <thead><tr id="board-head"></tr></thead>
+      <tbody id="board-body"></tbody>
+    </table>
+  </section>
+  <aside id="inspector" hidden>
+    <button id="inspector-close" aria-label="close">&times;</button>
+    <div id="inspector-body"></div>
+  </aside>
+</main>
+
+<footer id="bottom">
+  <section id="roster">
+    <div id="roster-head">
+      <label for="me">my team</label>
+      <select id="me"><option value="">&mdash; pick your team &mdash;</option></select>
+    </div>
+    <div id="roster-slots"></div>
+  </section>
+  <section id="ticker">
+    <div id="ticker-head">latest picks</div>
+    <ol id="ticker-list"></ol>
+  </section>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

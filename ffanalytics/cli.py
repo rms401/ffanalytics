@@ -56,6 +56,15 @@ def _parser() -> argparse.ArgumentParser:
                         help="skip scraping; re-fetch the draft into an "
                              "existing --db and print who was picked since "
                              "the last refresh")
+    parser.add_argument("--serve", action="store_true",
+                        help="skip scraping; serve the draft board web UI "
+                             "over an existing --db, refreshing picks in "
+                             "the background (needs the [web] extra)")
+    parser.add_argument("--port", type=int, default=8000,
+                        help="port for --serve (default: 8000)")
+    parser.add_argument("--poll", type=float, default=5.0, metavar="SECONDS",
+                        help="how often --serve re-fetches the draft picks "
+                             "(default: 5)")
     parser.add_argument("--no-ecr", action="store_true",
                         help="skip the expert consensus rankings scrape")
     parser.add_argument("--no-adp", action="store_true",
@@ -103,6 +112,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.refresh_picks:
         return _refresh_picks(args)
+
+    if args.serve:
+        return _serve(args)
 
     result = build_league_projections(
         args.league,
@@ -172,6 +184,29 @@ def _refresh_picks(args: argparse.Namespace) -> int:
         print("  " + " ".join(parts))
     for sleeper_id in sorted(new_ids - seen):
         print(f"  {sleeper_id}")
+    return 0
+
+
+def _serve(args: argparse.Namespace) -> int:
+    """Serve the draft board over an existing database."""
+    if not args.db or args.db == "-":
+        print("--serve needs --db pointing at an existing file",
+              file=sys.stderr)
+        return 2
+    if not Path(args.db).exists():
+        print(f"No database at {args.db} -- run a full scrape first:\n"
+              f"  python -m ffanalytics --league {args.league} --db {args.db}",
+              file=sys.stderr)
+        return 2
+
+    try:
+        from .web import serve
+    except ImportError:
+        print("The web UI needs FastAPI and uvicorn:\n"
+              "  pip install \"ffanalytics[web]\"", file=sys.stderr)
+        return 2
+
+    serve(args.db, args.league, port=args.port, poll_seconds=args.poll)
     return 0
 
 
