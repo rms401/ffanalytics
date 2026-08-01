@@ -14,7 +14,7 @@ import pandas as pd
 import requests
 
 from ..stats import to_numeric_frame
-from ._http import USER_AGENT, for_each_position, polite_pause
+from ._http import USER_AGENT, for_each_position, local_text, polite_pause
 from .columns import FANTASYSHARKS, FANTASYSHARKS_IDP, rename
 
 __all__ = ["scrape_fantasysharks"]
@@ -46,18 +46,27 @@ def scrape_fantasysharks(positions=POSITIONS, season=None, week=0,
     segment = _segment(season, week)
 
     def scrape_one(position: str) -> pd.DataFrame:
-        url = (
-            "https://www.fantasysharks.com/apps/bert/forecasts/projections.php"
-            f"?csv=1&Sort=&League=-1&Position={_POSITION_IDS[position]}"
-            f"&scoring=1&Segment={segment}&uid=4"
-        )
-        print(f"  FantasySharks {position}: {url}")
-        response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=120)
-        response.raise_for_status()
-        polite_pause()
+        saved = local_text(f"fantasysharks-{position.lower()}",
+                           f"sharks-{position.lower()}",
+                           f"position={_POSITION_IDS[position]}&")
+        if saved is not None:
+            path, text = saved
+            print(f"  FantasySharks {position}: {path} (local copy)")
+        else:
+            url = (
+                "https://www.fantasysharks.com/apps/bert/forecasts/projections.php"
+                f"?csv=1&Sort=&League=-1&Position={_POSITION_IDS[position]}"
+                f"&scoring=1&Segment={segment}&uid=4"
+            )
+            print(f"  FantasySharks {position}: {url}")
+            response = requests.get(url, headers={"User-Agent": USER_AGENT},
+                                    timeout=120)
+            response.raise_for_status()
+            polite_pause()
+            text = response.text
 
         idp = position in ("DL", "LB", "DB")
-        frame = pd.read_csv(io.StringIO(response.text), dtype=str)
+        frame = pd.read_csv(io.StringIO(text), dtype=str)
         frame = frame.drop(columns="Rank", errors="ignore")
         frame.columns = rename(frame.columns, FANTASYSHARKS_IDP if idp else FANTASYSHARKS)
 
