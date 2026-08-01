@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..db import refresh_picks
+from ..recommend import recommend
 from ..sleeper import STARTING_SLOTS, _fetch_managers
 
 __all__ = ["create_app", "serve"]
@@ -245,8 +246,20 @@ def create_app(db_path: str | Path, league_id: str | int | None = None,
                 "unprojected": _rows(connection,
                                      "SELECT stat, points FROM scoring "
                                      "WHERE projected = 0"),
+                "draft": _rows(connection, "SELECT * FROM draft"),
                 "refresh": refresher.status(),
             }
+
+    @app.get("/api/recommend")
+    def recommendation(me: str = "") -> dict:
+        if not me:
+            return {"available": False, "reason": "pick your team first"}
+        with _connect(db_path) as connection:
+            try:
+                return recommend(connection, me)
+            except Exception as error:  # noqa: BLE001 - advisor must not 500 mid-draft
+                return {"available": False,
+                        "reason": f"{type(error).__name__}: {error}"}
 
     @app.get("/api/player/{player_id}")
     def player(player_id: str) -> dict:

@@ -56,9 +56,19 @@ Key invariants:
 
 - **The SQLite file is the current picture, never a history.** Every table is
   dropped and rewritten per run; `db.refresh_picks()` rewrites only
-  `ownership` and `meta.written_at` so it can loop during a draft. The web UI
-  (`web/server.py`) is read-only over this file and re-reads it on every
-  request, so external writes show up on the next poll.
+  `ownership`, the `draft` order table, and `meta.written_at` so it can loop
+  during a draft. The web UI (`web/server.py`) is read-only over this file
+  and re-reads it on every request, so external writes show up on the next
+  poll.
+- **Replacement value is the n+1 player** — the first player ranked past the
+  last starter (`projections._replacement_value`), so every starter carries
+  positive VOR. Dropoff is the gap to the mean of the next *two* players at
+  the position. The draft advisor (`recommend.py`) models every opponent as
+  drafting best-available by this league's weighted VOR board (no ADP-based
+  opponent modeling — Ryan's explicit decision), restricts candidates to
+  open starting slots, and ranks candidate picks purely by the finished
+  starting lineup's projected points; sd/floor/ceiling are display-only and
+  tiers play no part in it.
 - **`ffanalytics/data/` is carried, not generated.** `bonus_cols.json` and
   `pts_allowed_sd_coefs.csv` are snapshots of models fitted in the old R
   package against play-by-play data and cannot be regenerated here;

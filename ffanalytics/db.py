@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .sleeper import draft_picks, fetch_league, sleeper_player_map
+from .sleeper import draft_picks, draft_state, fetch_league, sleeper_player_map
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
     from .league import LeagueProjections
@@ -39,7 +39,7 @@ __all__ = ["write_sqlite", "refresh_picks", "TABLES"]
 
 #: Every table a full run produces.  All are replaced on each run.
 TABLES = ("projections", "source_projections", "scoring", "slots", "ownership",
-          "players", "meta")
+          "draft", "players", "meta")
 
 #: Indexes to (re)create after the tables are written.  Replacing a table drops
 #: its indexes with it, so these are rebuilt every time.
@@ -61,6 +61,26 @@ _OWNERSHIP_COLUMNS = ["sleeper_id", "id", "player", "team_name", "manager",
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _draft_table(league: "SleeperLeague") -> pd.DataFrame:
+    """The draft's slot order with manager names attached, one row per slot.
+
+    Fetched fresh each call so the order appears the moment Sleeper assigns
+    it.  A league with no draft yet yields an empty (but typed) frame.
+    """
+    try:
+        state = draft_state(league.league_id)
+    except Exception as error:  # noqa: BLE001 - a draft may not exist yet
+        print(f"  (no draft order: {type(error).__name__}: {error})")
+        return pd.DataFrame()
+    managers = league.managers
+    if len(state) and managers is not None and len(managers):
+        state = state.merge(
+            managers[["owner_id", "manager", "team_name"]],
+            left_on="user_id", right_on="owner_id", how="left",
+        ).drop(columns=["owner_id"])
+    return state
 
 
 def _sqlite_safe(frame: pd.DataFrame) -> pd.DataFrame:
@@ -218,6 +238,7 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
         written["players"] = _replace(connection, "players", players)
         written["ownership"] = _replace(connection, "ownership",
                                         _ownership(league, picks, player_map))
+        written["draft"] = _replace(connection, "draft", _draft_table(league))
 
         # written_at marks when the ownership picture was last completed.
         meta = pd.DataFrame([{
@@ -243,9 +264,10 @@ def write_sqlite(result: "LeagueProjections", path: str | Path) -> dict[str, int
 def refresh_picks(path: str | Path, league_id: str | int) -> set[str]:
     """Re-fetch the draft into an existing database -- the fast loop.
 
-    Rewrites only ``ownership`` and the meta row's ``written_at``; the
-    projections are untouched.  Returns the sleeper_ids newly held since the
-    previous refresh -- empty (but still stamped) before the draft starts.
+    Rewrites only ``ownership``, the ``draft`` order table, and the meta
+    row's ``written_at``; the projections are untouched.  Returns the
+    sleeper_ids newly held since the previous refresh -- empty (but still
+    stamped) before the draft starts.
     """
     path = Path(path)
     if not path.exists():
@@ -274,6 +296,7 @@ def refresh_picks(path: str | Path, league_id: str | int) -> set[str]:
             connection.execute(
                 "CREATE INDEX ownership_sleeper ON ownership (sleeper_id)"
             )
+        _replace(connection, "draft", _draft_table(league))
         connection.execute("UPDATE meta SET written_at = ?", (_now(),))
 
     return set(ownership["sleeper_id"].dropna().astype(str)) - before

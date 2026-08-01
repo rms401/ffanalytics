@@ -497,6 +497,44 @@ def scoring_rules_from_sleeper(
     return rules, {**unprojectable, **unmapped}
 
 
+#: Columns of the frame :func:`draft_state` returns, one row per draft slot.
+_DRAFT_STATE_COLUMNS = ["slot", "user_id", "roster_id", "draft_id", "season",
+                        "status", "type", "rounds", "teams"]
+
+
+def draft_state(league_id: str | int) -> pd.DataFrame:
+    """The newest draft's shape and order, one row per draft slot.
+
+    Sleeper publishes ``draft_order`` as soon as the order is set, even while
+    the draft is still ``pre_draft`` -- so a team's slot is knowable before
+    the first pick.  Empty frame when the league has no draft yet; slots
+    without an assigned user keep a null ``user_id``.
+    """
+    drafts = _get(f"league/{league_id}/drafts") or []
+    if not drafts:
+        return pd.DataFrame(columns=_DRAFT_STATE_COLUMNS)
+
+    draft = drafts[0]  # newest first
+    settings = draft.get("settings") or {}
+    order = draft.get("draft_order") or {}
+    slot_roster = draft.get("slot_to_roster_id") or {}
+    slot_user = {int(slot): str(user) for user, slot in order.items()}
+    teams = settings.get("teams") or (max(slot_user) if slot_user else 0)
+
+    rows = [{
+        "slot": slot,
+        "user_id": slot_user.get(slot),
+        "roster_id": slot_roster.get(str(slot), slot_roster.get(slot)),
+        "draft_id": str(draft.get("draft_id")),
+        "season": draft.get("season"),
+        "status": draft.get("status"),
+        "type": draft.get("type"),
+        "rounds": settings.get("rounds"),
+        "teams": teams or None,
+    } for slot in range(1, int(teams or 0) + 1)]
+    return pd.DataFrame(rows, columns=_DRAFT_STATE_COLUMNS)
+
+
 def draft_picks(league_id: str | int) -> pd.DataFrame:
     """Every pick made in this league's drafts, newest draft first."""
     drafts = _get(f"league/{league_id}/drafts") or []
