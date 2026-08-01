@@ -69,7 +69,14 @@ Key invariants:
 - Weekly-bracket defensive scoring for season totals is simulated with a
   fixed NumPy seed — reproducible, but don't expect R-identical draws.
 - Sources that fail (blocked, unpublished, down) are reported and skipped,
-  never fatal; FantasySharks in particular blocks datacenter IPs.
+  never fatal; FantasySharks blocks datacenter IPs, RTSports blocks some
+  residential ones.
+- **`fdg/` holds manually saved endpoint responses** used as scrape
+  overrides (see `sources/_http.py:local_json`/`local_html`): when a site
+  blocks or drops requests from the current network, its raw response saved
+  into `fdg/` is parsed instead of fetching. RTSports JSON and FFToday HTML
+  are supported. The files are dated snapshots — delete them to force live
+  scraping.
 
 ## Web UI (`ffanalytics/web/`)
 

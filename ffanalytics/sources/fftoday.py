@@ -8,7 +8,8 @@ import pandas as pd
 
 from ..players import resolve_ids
 from ..stats import to_numeric_frame
-from ._http import Session, for_each_position, html_table, polite_pause
+from ._http import Session, for_each_position, html_table, local_html, \
+    polite_pause
 from .columns import FFTODAY, FFTODAY_IDP, rename
 
 __all__ = ["scrape_fftoday"]
@@ -44,12 +45,20 @@ def scrape_fftoday(positions=POSITIONS, season=None, week=0, **_) -> dict[str, p
                 f"&PosID={_POSITION_IDS[position]}&LeagueID=1"
                 f"&order_by=FFPts&sort_order=DESC&cur_page={page_number}"
             )
-            url = f"https://www.fftoday.com/rankings/{page_name}.php?{query}"
-            if page_number == 0:
-                print(f"  FFToday {position}: {url}")
-
-            page = session.html(url)
-            polite_pause()
+            saved = None
+            if week == 0:
+                saved = local_html(
+                    f"fftoday-{position.lower()}-{page_number}")
+            if saved is not None:
+                path, page = saved
+                print(f"  FFToday {position} page {page_number}: {path} "
+                      "(local copy)")
+            else:
+                url = f"https://www.fftoday.com/rankings/{page_name}.php?{query}"
+                if page_number == 0:
+                    print(f"  FFToday {position}: {url}")
+                page = session.html(url)
+                polite_pause()
 
             tables = page.cssselect("table table table")
             if not tables:

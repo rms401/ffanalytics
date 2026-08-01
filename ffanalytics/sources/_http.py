@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -15,6 +17,8 @@ __all__ = [
     "header_rows",
     "polite_pause",
     "for_each_position",
+    "local_json",
+    "local_html",
 ]
 
 USER_AGENT = (
@@ -61,6 +65,60 @@ class Session:
 
 def polite_pause(seconds: float = PAUSE_SECONDS) -> None:
     time.sleep(seconds)
+
+
+#: Directory (relative to the working directory) holding manually saved
+#: copies of endpoints a site refuses to serve this machine.
+LOCAL_DIR = Path("fdg")
+
+
+def _local_file(*names) -> Path | None:
+    """The first file in ``fdg/`` matching one of ``names``, if any.
+
+    A file matches if its stem equals a name exactly (``qb.json``,
+    ``adp.json``) or, for names longer than two characters, the name appears
+    anywhere in the filename -- which covers browser-saved names like
+    ``draft-guide-rankings-provider.php?POS=0.json``.
+    """
+    if not LOCAL_DIR.is_dir():
+        return None
+    wanted = [str(name).lower() for name in names]
+    for path in sorted(LOCAL_DIR.iterdir()):
+        if not path.is_file():
+            continue
+        stem, full = path.stem.lower(), path.name.lower()
+        if any(stem == name or (len(name) > 2 and name in full)
+               for name in wanted):
+            return path
+    return None
+
+
+def local_json(*names) -> tuple[Path, object] | None:
+    """A manually saved JSON copy of a blocked endpoint, if one exists.
+
+    Some sites 403 requests that don't come from a browser (or from a
+    particular network), but serve the same response happily elsewhere.
+    Saving that response into ``fdg/`` in the working directory lets a
+    scrape use it instead of the network.
+    """
+    path = _local_file(*names)
+    if path is None:
+        return None
+    try:
+        return path, json.loads(path.read_text())
+    except ValueError as error:
+        raise ValueError(
+            f"{path} is not valid JSON -- save the endpoint's raw "
+            "response body, not an HTML page"
+        ) from error
+
+
+def local_html(*names) -> tuple[Path, object] | None:
+    """Like :func:`local_json`, for endpoints that serve HTML pages."""
+    path = _local_file(*names)
+    if path is None:
+        return None
+    return path, lxml_html.fromstring(path.read_bytes())
 
 
 def html_table(table, header: bool | None = None) -> pd.DataFrame:
