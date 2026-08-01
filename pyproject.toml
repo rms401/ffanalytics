@@ -23,8 +23,8 @@ dependencies = [
 ffanalytics = "ffanalytics.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/FantasyFootballAnalytics/ffanalytics"
-Issues = "https://github.com/FantasyFootballAnalytics/ffanalytics/issues"
+Homepage = "https://github.com/rms401/ffanalytics"
+Issues = "https://github.com/rms401/ffanalytics/issues"
 
 [tool.setuptools.packages.find]
 include = ["ffanalytics*"]
