@@ -18,6 +18,7 @@
     <label id="hide-drafted-wrap">
       <input id="hide-drafted" type="checkbox"> hide drafted
     </label>
+    <button id="teams-btn" class="chip" type="button">teams</button>
   </div>
   <div id="freshness" class="dim">&mdash;</div>
 </header>
@@ -54,6 +55,13 @@
     <ol id="ticker-list"></ol>
   </section>
 </footer>
+
+<aside id="teams-panel" aria-label="team standings">
+  <div id="teams-head">projected starter points
+    <button id="teams-close" aria-label="close">&times;</button>
+  </div>
+  <ol id="teams-list"></ol>
+</aside>
 
 <script src="/static/app.js"></script>
 </body>
