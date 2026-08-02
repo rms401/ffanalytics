@@ -262,12 +262,12 @@ tr.drafted .pos-badge { opacity: 0.45; }
 /* ---- bottom strip ---------------------------------------------------- */
 
 /* Four boxes across: advisor (widest), selected player, my team, draft
-   log (narrowest). Fixed height keeps the divide low so the board gets
-   the room; each box scrolls internally. */
+   log (narrowest). Height scales with the window -- enough for the full
+   roster and plan on a MacBook -- and each box scrolls internally. */
 #bottom {
   display: flex;
   gap: 8px;
-  height: 220px;
+  height: clamp(300px, 32vh, 400px);
 }
 
 #advisor, #inspector, #roster, #ticker {
