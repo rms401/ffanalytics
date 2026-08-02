@@ -267,7 +267,7 @@ tr.drafted .pos-badge { opacity: 0.45; }
 #bottom {
   display: flex;
   gap: 8px;
-  height: clamp(300px, 32vh, 400px);
+  height: clamp(330px, 37vh, 460px);
 }
 
 #advisor, #inspector, #roster, #ticker {
