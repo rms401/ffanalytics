@@ -323,10 +323,17 @@ function renderRoster() {
       : el("div", "slot-player empty", "—"));
     ui.rosterSlots.appendChild(chip);
   }
-  for (const pick of bench) {
-    const chip = el("div", "slot filled");
-    chip.appendChild(el("div", "slot-name", "BENCH"));
-    chip.appendChild(el("div", "slot-player", pick.player || pick.sleeper_id));
+
+  // The bench: rounds beyond the starting slots, shown even while empty.
+  const rounds = state.draft.length ? state.draft[0].rounds || 0 : 0;
+  const benchCount = Math.max(rounds - open.length, bench.length);
+  for (let i = 0; i < benchCount; i += 1) {
+    const pick = bench[i];
+    const chip = el("div", "slot" + (pick ? " filled" : ""));
+    chip.appendChild(el("div", "slot-name", "BN"));
+    chip.appendChild(pick
+      ? el("div", "slot-player", pick.player || pick.sleeper_id)
+      : el("div", "slot-player empty", "—"));
     ui.rosterSlots.appendChild(chip);
   }
 }
