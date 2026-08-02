@@ -19,6 +19,10 @@ const ui = {
   inspectorClose: document.getElementById("inspector-close"),
   me: document.getElementById("me"),
   rosterSlots: document.getElementById("roster-slots"),
+  teamsBtn: document.getElementById("teams-btn"),
+  teamsPanel: document.getElementById("teams-panel"),
+  teamsList: document.getElementById("teams-list"),
+  teamsClose: document.getElementById("teams-close"),
   tickerList: document.getElementById("ticker-list"),
   advisorStatus: document.getElementById("advisor-status"),
   advisorBody: document.getElementById("advisor-body"),
@@ -285,35 +289,39 @@ function renderManagers() {
   if ([...ui.me.options].some(o => o.value === wanted)) ui.me.value = wanted;
 }
 
-function renderRoster() {
-  const mine = ui.me.value;
-  ui.rosterSlots.textContent = "";
-
-  const slotRows = state.slots.filter(s => s.kind === "slot");
+/* Fill a team's picks into the league's starting slots in draft order,
+   greedily: dedicated slots first, then flex-style slots by eligibility.
+   Whatever doesn't fit is the bench. */
+function fillStarters(picks) {
   const open = [];
-  for (const slot of slotRows) {
+  for (const slot of state.slots.filter(s => s.kind === "slot")) {
     for (let i = 0; i < slot.count; i += 1) {
       open.push({ name: slot.name, player: null });
     }
   }
-
   const posOf = new Map(state.board.map(r => [String(r.sleeper_id), r.pos]));
   const bench = [];
-  if (mine) {
-    const picks = state.picks
-      .filter(p => myTeamKey(p) === mine)
-      .sort((a, b) => a.draft_pick - b.draft_pick);
-    for (const pick of picks) {
-      const pos = posOf.get(String(pick.sleeper_id));
-      const eligible = slot =>
-        !slot.player &&
-        (!state.slot_positions[slot.name] ||
-          (pos && state.slot_positions[slot.name].includes(pos)));
-      const target = open.find(eligible);
-      if (target) target.player = pick;
-      else bench.push(pick);
-    }
+  const ordered = [...picks].sort((a, b) => a.draft_pick - b.draft_pick);
+  for (const pick of ordered) {
+    const pos = posOf.get(String(pick.sleeper_id));
+    const eligible = slot =>
+      !slot.player &&
+      (!state.slot_positions[slot.name] ||
+        (pos && state.slot_positions[slot.name].includes(pos)));
+    const target = open.find(eligible);
+    if (target) target.player = pick;
+    else bench.push(pick);
   }
+  return { open, bench };
+}
+
+function renderRoster() {
+  const mine = ui.me.value;
+  ui.rosterSlots.textContent = "";
+
+  const { open, bench } = fillStarters(
+    mine ? state.picks.filter(p => myTeamKey(p) === mine) : []
+  );
 
   for (const slot of open) {
     const chip = el("div", "slot" + (slot.player ? " filled" : ""));
@@ -335,6 +343,53 @@ function renderRoster() {
       ? el("div", "slot-player", pick.player || pick.sleeper_id)
       : el("div", "slot-player empty", "—"));
     ui.rosterSlots.appendChild(chip);
+  }
+}
+
+/* ---- teams panel (projected starter points) --------------------------- */
+
+function renderTeams() {
+  if (!ui.teamsPanel.classList.contains("open")) return;
+
+  const ptsOf = new Map(state.board.map(r => [String(r.sleeper_id), r.points]));
+  const byTeam = new Map();
+  for (const pick of state.picks) {
+    const key = myTeamKey(pick);
+    if (!key) continue;
+    if (!byTeam.has(key)) byTeam.set(key, []);
+    byTeam.get(key).push(pick);
+  }
+
+  // Every team in the draft order shows, picks or none yet.
+  const names = new Map();
+  for (const row of state.draft || []) {
+    const key = myTeamKey(row);
+    if (key && !names.has(key)) names.set(key, row.team_name || row.manager);
+  }
+  for (const key of byTeam.keys()) {
+    if (!names.has(key)) names.set(key, key);
+  }
+
+  const rows = [...names.keys()].map(key => {
+    const { open } = fillStarters(byTeam.get(key) || []);
+    let total = 0;
+    let filled = 0;
+    for (const slot of open) {
+      if (!slot.player) continue;
+      filled += 1;
+      total += ptsOf.get(String(slot.player.sleeper_id)) || 0;
+    }
+    return { key, name: names.get(key), total, filled, starters: open.length };
+  }).sort((a, b) => b.total - a.total);
+
+  ui.teamsList.textContent = "";
+  for (const row of rows) {
+    const item = el("li", row.key === ui.me.value ? "mine" : "");
+    item.appendChild(el("span", "team-name", row.name));
+    item.appendChild(el("span", "team-filled",
+                        `${row.filled}/${row.starters}`));
+    item.appendChild(el("span", "team-pts", fmt(row.total, 1)));
+    ui.teamsList.appendChild(item);
   }
 }
 
@@ -587,6 +642,7 @@ async function poll() {
   renderRoster();
   renderFreshness();
   renderAdvisor();
+  renderTeams();
 }
 
 ui.search.addEventListener("input", renderBoard);
@@ -596,6 +652,13 @@ ui.me.addEventListener("change", () => {
   renderBoard();
   renderRoster();
   renderAdvisor();
+});
+ui.teamsBtn.addEventListener("click", () => {
+  ui.teamsPanel.classList.toggle("open");
+  if (state) renderTeams();
+});
+ui.teamsClose.addEventListener("click", () => {
+  ui.teamsPanel.classList.remove("open");
 });
 ui.inspectorClose.addEventListener("click", () => {
   ui.inspectorClose.hidden = true;
